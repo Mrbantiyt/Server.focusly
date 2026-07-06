@@ -18,7 +18,7 @@ export function StopwatchCard({ seconds, running, onToggle, onReset }) {
       <div className="w-full flex items-center justify-between mb-4">
         <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Study Stopwatch</span>
         <span className="font-body text-xs px-2 py-1 rounded-full" style={{ color: COL.violetDeep, background: "rgba(123,110,246,0.12)" }}>
-          resets 4:00 AM
+          resets 12:00 AM
         </span>
       </div>
       <div className="relative" style={{ width: 180, height: 180 }}>
