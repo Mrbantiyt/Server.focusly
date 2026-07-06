@@ -5,7 +5,8 @@ import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useStopwatch } from "./hooks/useStopwatch";
 import { useStudyHistory } from "./hooks/useStudyHistory";
-import { watchTasks } from "./lib/firestore";
+import { useTasks } from "./hooks/useTasks";
+import { watchUserProfile } from "./lib/firestore";
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
@@ -35,12 +36,28 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
-  const [tasks, setTasks] = useState([]);
+  // Lifted up here (instead of living inside Tasks.jsx) so running-task
+  // timers keep counting no matter which tab is open — see useTasks.js.
+  const tasks = useTasks(user?.uid);
 
+  // Custom profile overrides (name / DP) stored in Firestore, layered on
+  // top of the Google-auth user so a custom profile picture uploaded from
+  // Settings shows up everywhere (Dashboard, Settings) without touching
+  // the underlying Google account.
+  const [profileDoc, setProfileDoc] = useState(null);
   useEffect(() => {
-    if (!user) return;
-    return watchTasks(user.uid, setTasks);
+    if (!user) { setProfileDoc(null); return; }
+    return watchUserProfile(user.uid, setProfileDoc);
   }, [user]);
+
+  const profile = user
+    ? {
+        uid: user.uid,
+        email: user.email,
+        displayName: profileDoc?.name || user.displayName,
+        photoURL: profileDoc?.photoURL || user.photoURL,
+      }
+    : null;
 
   return (
     <div className="w-full min-h-screen flex items-center justify-center p-4" style={{ background: COL.bg }}>
@@ -56,11 +73,11 @@ export default function App() {
           <>
             <div className="flex-1 overflow-y-auto px-5 pt-6 pb-3">
               {tab === "home" && (
-                <Dashboard user={user} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
+                <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
                   tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} />
               )}
               {tab === "chat" && <Chat />}
-              {tab === "tasks" && <Tasks uid={user.uid} />}
+              {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
               {tab === "cal" && (
                 <div className="flex flex-col gap-6">
                   <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
@@ -69,7 +86,7 @@ export default function App() {
               )}
               {tab === "settings" && (
                 <Settings
-                  user={user}
+                  user={profile}
                   tasks={tasks}
                   totalStudySeconds={
                     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
