@@ -4,7 +4,20 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Send, Image as ImageIcon, Loader2 } from "lucide-react";
 import { COL, neu } from "../theme";
-import { askFocuslyAI, fileToDataURL } from "../lib/ai";
+import { askFocuslyAI, compressImage } from "../lib/ai";
+
+// The raw OpenAI error for a billing/quota problem is a wall of text
+// pointing at OpenAI's docs — not useful to a student in the app. This
+// turns that specific case into a plain-language note that says whose
+// job it is to fix (the account owner's OpenAI billing, not a bug to
+// hunt for in the code).
+function friendlyAiError(e) {
+  const msg = e?.message || "";
+  if (/quota|billing|insufficient_quota/i.test(msg)) {
+    return "Focusly AI is temporarily unavailable — the OpenAI account behind it is out of credits. This isn't something you can fix from the app; whoever manages the OpenAI account needs to add billing/credits at platform.openai.com. Everything else in Focusly (tasks, stopwatch, calendar) is unaffected.";
+  }
+  return "Sorry, something went wrong: " + msg;
+}
 
 export default function Chat() {
   const [msgs, setMsgs] = useState([
@@ -31,7 +44,7 @@ export default function Chat() {
       const reply = await askFocuslyAI(historyFor(text));
       setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: reply }]);
     } catch (e) {
-      setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: "Sorry, something went wrong: " + e.message }]);
+      setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: friendlyAiError(e) }]);
     } finally {
       setBusy(false);
     }
@@ -39,7 +52,7 @@ export default function Chat() {
 
   const attachPhoto = async (file) => {
     if (!file || busy) return;
-    const dataUrl = await fileToDataURL(file);
+    const dataUrl = await compressImage(file, { maxDim: 1280, quality: 0.72 });
     setMsgs((m) => [...m, { id: Date.now(), from: "user", text: "🖼️ photo of notes", image: dataUrl }]);
     setBusy(true);
     try {
@@ -49,7 +62,7 @@ export default function Chat() {
       );
       setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: reply }]);
     } catch (e) {
-      setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: "Sorry, I couldn't read that photo: " + e.message }]);
+      setMsgs((m) => [...m, { id: Date.now() + 1, from: "ai", text: friendlyAiError(e) }]);
     } finally {
       setBusy(false);
     }

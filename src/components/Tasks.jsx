@@ -1,38 +1,19 @@
 // src/components/Tasks.jsx
-import React, { useEffect, useRef, useState } from "react";
-import { Plus, Play, Pause, Check, Trash2, ChevronDown, ChevronUp, Camera, Loader2, ImageOff } from "lucide-react";
+import React, { useRef, useState } from "react";
+import { Plus, Play, Pause, Check, Trash2, ChevronDown, ChevronUp, Camera, Loader2, ImageOff, Clock } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHMS } from "../lib/time";
-import { watchTasks, addTask, updateTask, deleteTask, addGoal, setGoalDone, removeGoal } from "../lib/firestore";
+import { addTask, updateTask, deleteTask, addGoal, setGoalDone, removeGoal } from "../lib/firestore";
 import { uploadProofPhoto, telegramSrc } from "../lib/media";
 
 const TAG_COLOR = { High: COL.coral, Medium: COL.blue, Low: COL.mint };
 
-export default function Tasks({ uid }) {
-  const [tasks, setTasks] = useState([]);
+// `tasks` is passed down from App.jsx (via the useTasks hook), which keeps
+// ticking a running task's elapsed time even while this tab isn't open —
+// see src/hooks/useTasks.js for why that used to break.
+export default function Tasks({ uid, tasks }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
-
-  // live sync from Firestore — updates instantly across tabs/devices
-  useEffect(() => {
-    if (!uid) return;
-    return watchTasks(uid, setTasks);
-  }, [uid]);
-
-  // local tick for running tasks: bump elapsed every second, flush every ~5s
-  useEffect(() => {
-    const id = setInterval(() => {
-      tasks.forEach((t) => {
-        if (t.running) {
-          const next = t.elapsed + 1;
-          setTasks((cur) => cur.map((x) => (x.id === t.id ? { ...x, elapsed: next } : x)));
-          if (next % 5 === 0) updateTask(uid, t.id, { elapsed: next });
-        }
-      });
-    }, 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, uid]);
 
   const toggleRun = (t) => updateTask(uid, t.id, { running: !t.running });
   const toggleManualDone = (t) => {
@@ -122,7 +103,24 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
         <button onClick={onRemove}><Trash2 size={15} color="#C7CAD9" /></button>
       </div>
 
-      {open && <GoalsPanel uid={uid} task={t} goals={goals} />}
+      {open && (
+        <div className="flex flex-col gap-2 pt-2 border-t" style={{ borderColor: "rgba(163,170,199,0.25)" }}>
+          {/* watch icon: how long this task has run, and whether it's currently ticking */}
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-1.5">
+              <Clock size={13} color={t.running ? COL.violet : COL.sub} />
+              <span className="font-body text-xs font-semibold" style={{ color: t.running ? COL.violet : COL.ink }}>{fmtHMS(t.elapsed)}</span>
+              <span className="font-body text-[10px]" style={{ color: COL.sub }}>{t.running ? "running" : "paused"}</span>
+            </div>
+            {/* completion status */}
+            <span className="font-body text-[11px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: t.done ? `${COL.mint}22` : `${COL.coral}1f`, color: t.done ? COL.mint : COL.coral }}>
+              {t.done ? "Complete" : "Not complete"}
+            </span>
+          </div>
+          <GoalsPanel uid={uid} task={t} goals={goals} />
+        </div>
+      )}
     </div>
   );
 }
@@ -157,15 +155,16 @@ function GoalsPanel({ uid, task, goals }) {
   const remove = (goalId) => removeGoal(uid, task.id, goals, goalId);
 
   return (
-    <div className="flex flex-col gap-2 pt-2 border-t" style={{ borderColor: "rgba(163,170,199,0.25)" }}>
+    <div className="flex flex-col gap-3 pt-1">
       {goals.map((g) => (
-        <div key={g.id} className="flex items-center gap-2 pl-2">
+        <div key={g.id} className="flex items-start gap-2 pl-2">
           <div className="flex-1">
             <div className="font-body text-xs" style={{ color: COL.ink, textDecoration: g.done ? "line-through" : "none", opacity: g.done ? 0.6 : 1 }}>
               {g.text}
             </div>
+            {/* full-size media preview so it's clear which photo was uploaded as proof */}
             {g.done && g.photoPath && (
-              <img src={telegramSrc(g.photoPath)} alt="proof" className="mt-1 w-16 h-16 rounded-lg object-cover" />
+              <img src={telegramSrc(g.photoPath)} alt="proof" className="mt-1.5 w-full max-h-48 rounded-xl object-cover" />
             )}
             {g.done && !g.photoPath && (
               <div className="flex items-center gap-1 mt-1 font-body text-[10px]" style={{ color: COL.sub }}>
