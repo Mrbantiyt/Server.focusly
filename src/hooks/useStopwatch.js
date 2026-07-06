@@ -11,7 +11,7 @@ const FLUSH_MS = 8000;
 // There are two separate numbers here on purpose:
 //  - `todaySeconds` = the banked cloud total for "Time today". It only ever
 //    grows while running, and is only ever zeroed automatically at the next
-//    4:00 AM rollover. This is what Dashboard/Calendar/Graph/Settings show.
+//    midnight (12:00 AM) rollover. This is what Dashboard/Calendar/Graph/Settings show.
 //  - `displaySeconds` = what the big circular stopwatch shows. It normally
 //    tracks todaySeconds, but the Reset button can zero *just this*, e.g. to
 //    start a fresh-looking session, without touching the real banked total.
@@ -38,14 +38,14 @@ export function useStopwatch(uid) {
     return unsub;
   }, [uid, dayKey]);
 
-  // local 1s tick + 4am rollover check
+  // local 1s tick + midnight rollover check
   useEffect(() => {
     const id = setInterval(() => {
       const key = dayKeyFor(new Date());
       if (key !== dayKey) {
         if (uid) setStudyDay(uid, dayKey, todaySeconds); // flush the finished day
         setDayKey(key);
-        setTodaySeconds(0);   // auto-reset right after 4:00 AM
+        setTodaySeconds(0);   // auto-reset right after midnight
         setDisplaySeconds(0); // stopwatch face resets too for the new day
         return;
       }
@@ -95,7 +95,7 @@ export function useStopwatch(uid) {
   }, [uid, dayKey, todaySeconds, running]);
 
   // Zeroes only the stopwatch FACE. "Time today" (todaySeconds) is untouched
-  // and keeps counting in the background — it only resets at 4am.
+  // and keeps counting in the background — it only resets at midnight.
   const reset = () => setDisplaySeconds(0);
 
   return { seconds: displaySeconds, todaySeconds, running, toggle, reset, dayKey };
