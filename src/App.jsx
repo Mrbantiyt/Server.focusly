@@ -6,6 +6,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useStopwatch } from "./hooks/useStopwatch";
 import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useTasks } from "./hooks/useTasks";
+import { useGameStats } from "./hooks/useGameStats";
 import { watchUserProfile } from "./lib/firestore";
 
 import Login from "./components/Login";
@@ -15,6 +16,9 @@ import Tasks from "./components/Tasks";
 import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
 import Settings from "./components/Settings";
+import StatusBar from "./components/StatusBar";
+import LevelModal from "./components/LevelModal";
+import StreakModal from "./components/StreakModal";
 
 const FONT = (
   <style>{`
@@ -39,6 +43,9 @@ export default function App() {
   // Lifted up here (instead of living inside Tasks.jsx) so running-task
   // timers keep counting no matter which tab is open — see useTasks.js.
   const tasks = useTasks(user?.uid);
+  const gameStats = useGameStats(user?.uid, running);
+  const [showLevel, setShowLevel] = useState(false);
+  const [showStreak, setShowStreak] = useState(false);
 
   // Custom profile overrides (name / DP) stored in Firestore, layered on
   // top of the Google-auth user so a custom profile picture uploaded from
@@ -71,7 +78,17 @@ export default function App() {
           <Login onLogin={loginWithGoogle} />
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-5 pt-6 pb-3">
+            <div className="px-5 pt-5">
+              <StatusBar
+                streak={gameStats.streak}
+                level={gameStats.level}
+                coins={gameStats.coins}
+                onOpenStreak={() => setShowStreak(true)}
+                onOpenLevel={() => setShowLevel(true)}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               {tab === "home" && (
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
                   tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} />
@@ -112,6 +129,22 @@ export default function App() {
           </>
         )}
       </div>
+
+      {showLevel && (
+        <LevelModal
+          level={gameStats.level}
+          xpIntoLevel={gameStats.xpIntoLevel}
+          xpForNextLevel={gameStats.xpForNextLevel}
+          onClose={() => setShowLevel(false)}
+        />
+      )}
+      {showStreak && (
+        <StreakModal
+          streak={gameStats.streak}
+          streakDays={gameStats.streakDays}
+          onClose={() => setShowStreak(false)}
+        />
+      )}
     </div>
   );
 }
