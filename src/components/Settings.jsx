@@ -1,12 +1,12 @@
 // src/components/Settings.jsx
 import React, { useRef, useState } from "react";
-import { LogOut, Pencil, Check, Flame, ListChecks, Target, Camera, Loader2 } from "lucide-react";
+import { LogOut, Pencil, Check, Flame, ListChecks, Target, Camera, Loader2, Coins, Shield } from "lucide-react";
 import { COL, neu } from "../theme";
-import { fmtHrs } from "../lib/time";
+import { fmtHrs, fmtCompact } from "../lib/time";
 import { updateUserProfile } from "../lib/firestore";
 import { uploadProfilePhoto } from "../lib/media";
 
-export default function Settings({ user, tasks, totalStudySeconds, onLogout }) {
+export default function Settings({ user, tasks, totalStudySeconds, coins = 0, streak = 0, level = 1, onLogout }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.displayName || "Student");
   const [uploadingDp, setUploadingDp] = useState(false);
@@ -77,6 +77,9 @@ export default function Settings({ user, tasks, totalStudySeconds, onLogout }) {
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
         <StatTile icon={ListChecks} accent={COL.mint} label="Tasks completed" value={`${tasksDone}/${tasks.length}`} />
         <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${goalsDone}/${goalsTotal}`} />
+        <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="1000 coins = 1 Level" />
+        <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
+        <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
       </div>
 
       <button onClick={onLogout} style={neu(false, 20)} className="p-4 flex items-center gap-3 active:scale-[0.98] transition text-left">
@@ -89,7 +92,7 @@ export default function Settings({ user, tasks, totalStudySeconds, onLogout }) {
   );
 }
 
-function StatTile({ icon: Icon, accent, label, value }) {
+function StatTile({ icon: Icon, accent, label, value, note }) {
   return (
     <div style={neu(false, 20)} className="p-4">
       <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-3" style={{ background: `${accent}22` }}>
@@ -97,6 +100,7 @@ function StatTile({ icon: Icon, accent, label, value }) {
       </div>
       <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>{value}</div>
       <div className="font-body text-xs" style={{ color: COL.sub }}>{label}</div>
+      {note && <div className="font-body text-[10px] mt-1" style={{ color: COL.sub, opacity: 0.75 }}>{note}</div>}
     </div>
   );
 }
