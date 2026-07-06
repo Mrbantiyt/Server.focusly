@@ -102,6 +102,70 @@ export async function removeGoal(uid, taskId, currentGoals, goalId) {
   return goals;
 }
 
+/* -------------------------------- gamification ---------------------------------- */
+
+export function xpNeededForLevel(level) {
+  return level === 0 ? 100 : 100 + level * 500;
+}
+
+export function levelFromXp(xp) {
+  let level = 0;
+  let remaining = xp;
+  let needed = xpNeededForLevel(level);
+  while (remaining >= needed) {
+    remaining -= needed;
+    level += 1;
+    needed = xpNeededForLevel(level);
+  }
+  return { level, xpIntoLevel: remaining, xpForNextLevel: needed };
+}
+
+export function watchGameStats(uid, cb) {
+  const ref = doc(db, "users", uid);
+  return onSnapshot(ref, (snap) => {
+    const d = snap.exists() ? snap.data() : {};
+    cb({
+      xp: d.xp || 0,
+      coins: d.coins || 0,
+      streak: d.streak || 0,
+      lastStreakDay: d.lastStreakDay || null,
+      streakDays: d.streakDays || {},
+    });
+  });
+}
+
+export async function addXp(uid, amount) {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  const d = snap.exists() ? snap.data() : {};
+  const prevXp = d.xp || 0;
+  const prevCoins = d.coins || 0;
+
+  const newXp = prevXp + amount;
+  const prevLevel = levelFromXp(prevXp).level;
+  const newLevel = levelFromXp(newXp).level;
+  const levelsGained = Math.max(0, newLevel - prevLevel);
+  const newCoins = prevCoins + levelsGained * 1000;
+
+  await setDoc(ref, { xp: newXp, coins: newCoins }, { merge: true });
+  return { xp: newXp, coins: newCoins, level: newLevel, levelsGained };
+}
+
+export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  const d = snap.exists() ? snap.data() : {};
+  const lastDay = d.lastStreakDay || null;
+
+  if (lastDay === todayKey) return;
+
+  const continuing = lastDay === yesterdayKey;
+  const newStreak = continuing ? (d.streak || 0) + 1 : 1;
+  const streakDays = { ...(d.streakDays || {}), [todayKey]: true };
+
+  await setDoc(ref, { streak: newStreak, lastStreakDay: todayKey, streakDays }, { merge: true });
+}
+
 /* ---------------------------------- profile ------------------------------------ */
 
 export async function ensureUserProfile(user) {

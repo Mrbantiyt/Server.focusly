@@ -23,6 +23,14 @@ export function fmtHrs(totalSeconds) {
   return (s / 3600).toFixed(1) + "h";
 }
 
+// Compact display for coin/XP counters: 1000 -> "1k", 12500 -> "12.5k"
+export function fmtCompact(n) {
+  const num = Math.max(0, Math.floor(n));
+  if (num < 1000) return `${num}`;
+  const k = num / 1000;
+  return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
+}
+
 // milliseconds until the next 4:00 AM boundary from "now"
 export function msUntilNextReset(now = new Date()) {
   const next = new Date(now);
