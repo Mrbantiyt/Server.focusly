@@ -105,6 +105,9 @@ export default function App() {
                 <Settings
                   user={profile}
                   tasks={tasks}
+                  coins={gameStats.coins}
+                  streak={gameStats.streak}
+                  level={gameStats.level}
                   totalStudySeconds={
                     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
                   }
