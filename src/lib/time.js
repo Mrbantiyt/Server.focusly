@@ -1,12 +1,16 @@
 // src/lib/time.js
 
-// "Study day" runs 4:00 AM -> 3:59 AM, so anything before 4am still counts
-// toward the previous calendar day. This is what makes the stopwatch
-// auto-reset to 0 right after 4am.
+// Calendar day, midnight -> midnight (local time). Whatever the local clock
+// says today is what counts as "today" - no 4am shift.
 export function dayKeyFor(date) {
   const d = new Date(date);
-  if (d.getHours() < 4) d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10); // "YYYY-MM-DD"
+  // Build the key from LOCAL date parts. toISOString() would convert to UTC
+  // first, which shifts the date for any timezone ahead of UTC (e.g. IST,
+  // UTC+5:30) and makes the rollover fire at the wrong local time/day.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`; // "YYYY-MM-DD"
 }
 
 export function fmtHMS(totalSeconds) {
@@ -31,10 +35,9 @@ export function fmtCompact(n) {
   return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
 }
 
-// milliseconds until the next 4:00 AM boundary from "now"
+// milliseconds until the next midnight boundary from "now"
 export function msUntilNextReset(now = new Date()) {
   const next = new Date(now);
-  next.setHours(4, 0, 0, 0);
-  if (next <= now) next.setDate(next.getDate() + 1);
+  next.setHours(24, 0, 0, 0); // rolls over to next day's 00:00:00
   return next.getTime() - now.getTime();
 }
