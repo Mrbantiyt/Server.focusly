@@ -40,12 +40,20 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
 /* ---------------------------------- tasks -------------------------------------- */
 
 // users/{uid}/tasks/{taskId} = {
-//   title, tag, elapsed, running, done, createdAt,
+//   title, tag, elapsed, running, startedAt, done, createdAt,
 //   goals: [{ id, text, done, photoPath }]   <- photoPath is a Telegram file
 //                                               path (see src/lib/media.js),
 //                                               NOT a raw URL (keeps the bot
 //                                               token server-side only).
 // }
+// `elapsed` is the banked total (seconds) as of the last time the task was
+// paused/flushed. While `running` is true, `startedAt` (a millisecond
+// epoch, set client-side) marks when the current run began — real elapsed
+// time is `elapsed + (Date.now() - startedAt) / 1000`. Deriving it from a
+// wall-clock timestamp instead of counting interval ticks means the timer
+// stays correct even if the JS timer itself gets throttled/paused while the
+// screen is off or the app is backgrounded — the moment the app wakes back
+// up it recomputes from real elapsed time instead of having lost ticks.
 // `done` is derived automatically: true once every goal in `goals` is done
 // (a task with zero goals is completed manually via the checkmark instead).
 export function watchTasks(uid, cb) {
@@ -60,7 +68,7 @@ export function watchTasks(uid, cb) {
 export async function addTask(uid, title, tag = "Medium") {
   const ref = collection(db, "users", uid, "tasks");
   await addDoc(ref, {
-    title, tag, done: false, elapsed: 0, running: false, goals: [],
+    title, tag, done: false, elapsed: 0, running: false, startedAt: null, goals: [],
     createdAt: serverTimestamp(),
   });
 }
