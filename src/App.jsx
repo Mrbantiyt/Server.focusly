@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, lazy, Suspense } from "react";
 import { Home, MessageSquare, CheckSquare, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
@@ -11,15 +11,31 @@ import { watchUserProfile } from "./lib/firestore";
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import Chat from "./components/Chat";
-import Tasks from "./components/Tasks";
-import CalendarView from "./components/CalendarView";
-import GraphView from "./components/GraphView";
-import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
-import LevelModal from "./components/LevelModal";
-import StreakModal from "./components/StreakModal";
-import Store, { STORE_ITEMS } from "./components/Store";
+
+// Lazy-loaded: only fetched when the user actually opens that tab/modal,
+// instead of all being bundled into the initial load. GraphView pulls in
+// recharts (heavy), and Store/Chat/Settings/CalendarView/modals are only
+// needed after the first interaction.
+const Chat = lazy(() => import("./components/Chat"));
+const Tasks = lazy(() => import("./components/Tasks"));
+const CalendarView = lazy(() => import("./components/CalendarView"));
+const GraphView = lazy(() => import("./components/GraphView"));
+const Settings = lazy(() => import("./components/Settings"));
+const LevelModal = lazy(() => import("./components/LevelModal"));
+const StreakModal = lazy(() => import("./components/StreakModal"));
+const Store = lazy(() => import("./components/Store"));
+
+// Kept eager (small + needed for the coin/mascot icon lookup on first paint).
+import { STORE_ITEMS } from "./components/Store";
+
+function TabFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center font-body text-sm" style={{ color: COL.sub }}>
+      Loading…
+    </div>
+  );
+}
 
 const FONT = (
   <style>{`
@@ -50,7 +66,7 @@ export default function App() {
   const [showStore, setShowStore] = useState(false);
 
   const activeMascotItem = STORE_ITEMS.find((it) => it.id === gameStats.activeMascot);
-  const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
+  const mascotSrc = activeMascotItem?.img || "/mascot-logo.webp";
 
   // Custom profile overrides (name / DP) stored in Firestore, layered on
   // top of the Google-auth user so a custom profile picture uploaded from
