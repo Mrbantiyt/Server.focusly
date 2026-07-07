@@ -112,9 +112,9 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
         )}
 
         <button onClick={onToggleOpen}>
-          {open ? <ChevronUp size={16} color=COL.sub /> : <ChevronDown size={16} color=COL.sub />}
+          {open ? <ChevronUp size={16} color={COL.sub} /> : <ChevronDown size={16} color={COL.sub} />}
         </button>
-        <button onClick={onRemove}><Trash2 size={15} color=COL.sub /></button>
+        <button onClick={onRemove}><Trash2 size={15} color={COL.sub} /></button>
       </div>
 
       {open && (
@@ -212,7 +212,7 @@ function GoalsPanel({ uid, task, goals }) {
               <Camera size={11} color={COL.sub} />
             </button>
           )}
-          <button onClick={() => remove(g.id)}><Trash2 size={13} color=COL.sub /></button>
+          <button onClick={() => remove(g.id)}><Trash2 size={13} color={COL.sub} /></button>
         </div>
       ))}
 
