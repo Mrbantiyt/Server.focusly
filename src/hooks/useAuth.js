@@ -43,9 +43,15 @@ export function useAuth() {
 
   // Logs in with either an email address or a username, plus password.
   const loginWithEmail = async ({ identifier, password }) => {
-    let email = identifier;
-    if (!identifier.includes("@")) {
-      const foundEmail = await getEmailForUsername(identifier);
+    const trimmed = identifier.trim();
+    // A real email always has a domain with a dot after the @
+    // (e.g. a@b.com). "@bantiraj" has no dot after the @, so it's
+    // treated as a username typed with a leading @, not an email.
+    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
+
+    let email = trimmed;
+    if (!looksLikeEmail) {
+      const foundEmail = await getEmailForUsername(trimmed);
       if (!foundEmail) throw new Error("No account found with that username.");
       email = foundEmail;
     }
