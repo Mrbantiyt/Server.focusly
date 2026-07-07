@@ -16,15 +16,17 @@ function Pill({ children, onClick }) {
   );
 }
 
-export default function StatusBar({ streak, level, coins, onOpenStreak, onOpenLevel }) {
+export default function StatusBar({ streak, level, coins, mascotSrc, onOpenStreak, onOpenLevel, onOpenStore }) {
   return (
     <div className="flex items-center justify-between">
-      <img
-        src="/mascot-logo.png"
-        alt="Focusly"
-        className="w-10 h-10 rounded-2xl object-cover"
-        style={{ boxShadow: "4px 4px 10px rgba(163,170,199,0.4), -4px -4px 10px rgba(255,255,255,0.85)" }}
-      />
+      <button onClick={onOpenStore} className="active:scale-95 transition">
+        <img
+          src={mascotSrc || "/mascot-logo.png"}
+          alt="Focusly"
+          className="w-10 h-10 rounded-2xl object-cover"
+          style={{ boxShadow: "4px 4px 10px rgba(163,170,199,0.4), -4px -4px 10px rgba(255,255,255,0.85)" }}
+        />
+      </button>
 
       <div className="flex items-center gap-2">
         <Pill onClick={onOpenStreak}>

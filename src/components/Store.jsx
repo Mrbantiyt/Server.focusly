@@ -1,0 +1,139 @@
+// src/components/Store.jsx
+import React, { useState } from "react";
+import { X, Check } from "lucide-react";
+import { COL, neu } from "../theme";
+import { purchaseItem, setActiveMascot } from "../lib/firestore";
+
+// Cosmic Voyager Theme Pack — item catalogue.
+// `img` files live in /public/store/ (served from site root as /store/...).
+export const STORE_ITEMS = [
+  { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.png", price: 5 },
+  { id: "drago-cosmic", name: "Cosmic Drago", img: "/store/drago-cosmic.png", price: 10 },
+  { id: "drago-supernova", name: "Supernova Drago", img: "/store/drago-supernova.png", price: 15 },
+];
+
+function fmtCoins(n) {
+  return n;
+}
+
+export default function Store({ uid, coins, ownedItems, activeMascot, onClose }) {
+  const [busyId, setBusyId] = useState(null);
+  const [error, setError] = useState(null);
+
+  const owned = ownedItems || [];
+
+  async function handleBuy(item) {
+    if (!uid || busyId) return;
+    setError(null);
+    setBusyId(item.id);
+    const res = await purchaseItem(uid, item.id, item.price);
+    setBusyId(null);
+    if (!res.ok) {
+      setError(res.reason === "not-enough-coins" ? "Not enough coins" : "Something went wrong");
+    }
+  }
+
+  async function handleEquip(itemId) {
+    if (!uid) return;
+    await setActiveMascot(uid, itemId);
+  }
+
+  const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
+      <div className="w-full max-w-sm rounded-[28px] p-6 max-h-[90vh] overflow-y-auto" style={{ background: COL.bg }}>
+        <div className="flex items-center justify-between mb-6">
+          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-full" style={neu(false, 999)}>
+            <X size={16} color={COL.sub} />
+          </button>
+          <span className="font-display font-bold text-lg" style={{ color: COL.ink }}>Store</span>
+          <div style={neu(false, 999)} className="flex items-center gap-1.5 px-3 py-1.5">
+            <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
+              style={{ background: "#F5B301", color: "#fff" }}>K</span>
+            <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{fmtCoins(coins)}</span>
+          </div>
+        </div>
+
+        <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
+          Cosmic Voyager Theme Pack
+        </div>
+
+        {error && (
+          <div className="mb-3 px-3 py-2 rounded-xl font-body text-xs text-center" style={{ background: "rgba(255,122,133,0.15)", color: COL.coral }}>
+            {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          {STORE_ITEMS.map((item) => {
+            const isOwned = owned.includes(item.id);
+            const isBusy = busyId === item.id;
+            return (
+              <div key={item.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
+                <img src={item.img} alt={item.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
+                <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{item.name}</div>
+                {isOwned ? (
+                  <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
+                    style={{ background: "rgba(63,207,163,0.15)", color: COL.mint }}>
+                    <Check size={12} /> Owned
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleBuy(item)}
+                    disabled={isBusy}
+                    style={neu(false, 999)}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
+                  >
+                    <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
+                      style={{ background: "#F5B301", color: "#fff" }}>K</span>
+                    <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
+                      {isBusy ? "…" : item.price}
+                    </span>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
+          My Collection
+        </div>
+
+        {collection.length === 0 ? (
+          <div style={neu(true, 20)} className="p-5 text-center font-body text-xs" style={{ color: COL.sub }}>
+            Nothing here yet — buy a theme above to unlock it.
+          </div>
+        ) : (
+          <div className="grid grid-cols-4 gap-3">
+            {collection.map((item) => {
+              const active = activeMascot === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleEquip(item.id)}
+                  className="flex flex-col items-center gap-1 active:scale-95 transition"
+                >
+                  <div
+                    className="w-14 h-14 rounded-2xl overflow-hidden"
+                    style={{
+                      boxShadow: active
+                        ? `0 0 0 2px ${COL.violet}, 4px 4px 10px rgba(163,170,199,0.4)`
+                        : "4px 4px 10px rgba(163,170,199,0.4), -4px -4px 10px rgba(255,255,255,0.85)",
+                    }}
+                  >
+                    <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                  <span className="font-body text-[10px]" style={{ color: active ? COL.violet : COL.sub }}>
+                    {active ? "In use" : "Use"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
