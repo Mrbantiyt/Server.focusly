@@ -37,7 +37,7 @@ const NAV = [
 ];
 
 export default function App() {
-  const { user, loading, loginWithGoogle, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
+  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
@@ -86,7 +86,6 @@ export default function App() {
           <div className="flex-1 flex items-center justify-center font-body text-sm" style={{ color: COL.sub }}>Loading…</div>
         ) : !user ? (
           <Login
-            onLogin={loginWithGoogle}
             onSignupWithEmail={signupWithEmail}
             onLoginWithEmail={loginWithEmail}
             onResetPassword={resetPassword}
