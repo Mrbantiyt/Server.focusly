@@ -130,6 +130,8 @@ export function watchGameStats(uid, cb) {
       streak: d.streak || 0,
       lastStreakDay: d.lastStreakDay || null,
       streakDays: d.streakDays || {},
+      ownedItems: d.ownedItems || [],
+      activeMascot: d.activeMascot || "default",
     });
   });
 }
@@ -164,6 +166,37 @@ export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
   const streakDays = { ...(d.streakDays || {}), [todayKey]: true };
 
   await setDoc(ref, { streak: newStreak, lastStreakDay: todayKey, streakDays }, { merge: true });
+}
+
+/* ------------------------------------ store ------------------------------------- */
+
+// Buys a store item for `cost` coins (fails if not enough coins or already
+// owned), adds it to users/{uid}.ownedItems, and equips it as the active
+// mascot. Returns { ok, reason? }.
+export async function purchaseItem(uid, itemId, cost) {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  const d = snap.exists() ? snap.data() : {};
+  const owned = d.ownedItems || [];
+
+  if (owned.includes(itemId)) return { ok: false, reason: "already-owned" };
+
+  const coins = d.coins || 0;
+  if (coins < cost) return { ok: false, reason: "not-enough-coins" };
+
+  await setDoc(ref, {
+    coins: coins - cost,
+    ownedItems: [...owned, itemId],
+    activeMascot: itemId,
+  }, { merge: true });
+
+  return { ok: true };
+}
+
+// Switches the equipped mascot to an already-owned item (or back to "default").
+export async function setActiveMascot(uid, itemId) {
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, { activeMascot: itemId }, { merge: true });
 }
 
 /* ---------------------------------- profile ------------------------------------ */
