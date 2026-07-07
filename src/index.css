@@ -6,8 +6,3 @@ body {
   margin: 0;
   background: #15151C;
 }
-
-input::placeholder {
-  color: #8C8CA1;
-  opacity: 1;
-}
