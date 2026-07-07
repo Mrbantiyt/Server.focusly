@@ -15,10 +15,10 @@ const COSMIC_VOYAGER_PACK = [
 const MOOD_PACK = [
   { id: "mr-brightside", name: "Mr.Brightside", img: "/store/mr-brightside.png", price: 35 },
   { id: "aha-moment", name: "The Aha Moment", img: "/store/aha-moment.png", price: 200 },
-  { id: "pressure-cooker", name: "Pressure Cooker", img: "/store/pressure-cooker.png", price: 200 },
+  { id: "count-dragula", name: "Count Dragula", img: "/store/count-dragula.png", price: 200 },
   { id: "kai-njuring", name: "The Kai-njuring", img: "/store/kai-njuring.png", price: 125 },
   { id: "man-of-the-match", name: "Man of the Match", img: "/store/man-of-the-match.png", price: 100 },
-  { id: "bond-james-bond", name: "Bond. James Bond.", img: "/store/bond-james-bond.png", price: 150 },
+  { id: "sweating-bullets", name: "Sweating Bullets", img: "/store/sweating-bullets.png", price: 300 },
   { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.png", price: 500 },
 ];
 
