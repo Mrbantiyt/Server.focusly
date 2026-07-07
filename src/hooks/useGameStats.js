@@ -12,13 +12,13 @@ const TICK_MS = 10000; // 5 XP every 10 seconds of active study time
 // - Coins: +1000 credited automatically the moment a level is crossed.
 // - Streak: bumped once per calendar day on login (see registerDailyLogin).
 export function useGameStats(uid, running) {
-  const [stats, setStats] = useState({ xp: 0, coins: 0, streak: 0, streakDays: {} });
+  const [stats, setStats] = useState({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });
   const accumulatedRef = useRef(0);
   const loginRegisteredRef = useRef(null);
 
   // live sync from Firestore
   useEffect(() => {
-    if (!uid) { setStats({ xp: 0, coins: 0, streak: 0, streakDays: {} }); return; }
+    if (!uid) { setStats({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" }); return; }
     return watchGameStats(uid, setStats);
   }, [uid]);
 
@@ -54,6 +54,8 @@ export function useGameStats(uid, running) {
     coins: stats.coins,
     streak: stats.streak,
     streakDays: stats.streakDays,
+    ownedItems: stats.ownedItems,
+    activeMascot: stats.activeMascot,
     level,
     xpIntoLevel,
     xpForNextLevel,
