@@ -8,116 +8,132 @@ import { getStudyDay, setStudyDay, watchStudyDay } from "../lib/firestore";
 // FLUSH_MS, plus immediately on pause / tab close / day rollover.
 const FLUSH_MS = 8000;
 
-// NOTE on why this is wall-clock based, not tick-counted:
-// Mobile browsers/webviews throttle or fully suspend `setInterval` once the
-// screen turns off or the app goes to the background, to save battery. A
-// naive "+1 every 1000ms" loop would then simply stop accumulating time for
-// as long as the screen was off, even though `running` stayed true. Instead,
-// whenever the stopwatch is running we stamp `runStartedAt` (a Date.now()
-// epoch) and always derive the *true* elapsed time as
-// `bankedSeconds + (Date.now() - runStartedAt) / 1000` — so no matter how
-// delayed or infrequent the interval actually fires, the moment it does fire
-// (e.g. right when the screen turns back on) it recomputes from real time
-// and is instantly correct, with nothing lost.
+// ---------------------------------------------------------------------------
+// MODEL
+// ---------------------------------------------------------------------------
+// "Time today" is the sum of TWO independent sources, both stored on the
+// same users/{uid}/studyDays/{dayKey} doc:
+//   seconds      — from this Study Stopwatch
+//   taskSeconds  — from running task timers on the Tasks tab (added there
+//                  via addTaskSeconds as those timers run; see useTasks.js)
+// This hook owns `seconds` and just adds in `taskSeconds` (read-only, from
+// the same Firestore doc) to produce the number shown as "Time today".
 //
-// There are two separate numbers here on purpose:
-//  - `todaySeconds` = the banked cloud total for "Time today". It only ever
-//    grows while running, and is only ever zeroed automatically at the next
-//    midnight (12:00 AM) rollover. This is what Dashboard/Calendar/Graph/Settings show.
-//  - `displaySeconds` = what the big circular stopwatch shows. It normally
-//    tracks todaySeconds, but the Reset button can zero *just this*, e.g. to
-//    start a fresh-looking session, without touching the real banked total.
+// bankedRef.current is the last-known-good STOPWATCH total (never moves
+// backward). While running, the true current stopwatch total is always
+// computed fresh as bankedRef.current + secondsSinceRunStarted() from a
+// wall-clock timestamp (runStartedAtRef) — never accumulated tick by tick —
+// so throttled/suspended intervals (screen off, backgrounded tab) never
+// lose time.
+//
+//   todaySeconds (Time today)  = liveStopwatch() + taskSecondsRef.current
+//   displaySeconds (face)      = liveStopwatch() - sessionBaseRef.current
+// sessionBaseRef is a snapshot of bankedRef taken when Reset is pressed —
+// it never moves bankedRef itself, so "Time today" can never go backward
+// and the face can never go negative.
+//
+// Remote values (cross-device sync) only ever move bankedRef.current
+// FORWARD, and whenever they do, runStartedAtRef is re-stamped to "now" so
+// seconds already folded into the new remote total are never
+// double-counted on top of a stale run-start timestamp.
 export function useStopwatch(uid) {
   const [dayKey, setDayKey] = useState(dayKeyFor(new Date()));
-  const [todaySeconds, setTodaySeconds] = useState(0);
-  const [displayOffset, setDisplayOffset] = useState(0); // seconds subtracted for a "face reset"
   const [running, setRunning] = useState(false);
   const [, forceTick] = useState(0);
-  const flushedAtRef = useRef(0);
+
+  const bankedRef = useRef(0);          // last-known-good stopwatch total (never moves backward)
+  const taskSecondsRef = useRef(0);     // last-known task-timer total for today, from Firestore
+  const sessionBaseRef = useRef(0);     // bankedRef snapshot at last face-reset
   const runStartedAtRef = useRef(null); // Date.now() when the current run began, or null if paused
-  const runningRef = useRef(false); // mirrors `running`, but readable from effects that don't re-run on every toggle
+  const runningRef = useRef(false);     // mirrors `running`, readable from effects/closures without re-subscribing
+  const flushedAtRef = useRef(0);
 
   useEffect(() => { runningRef.current = running; }, [running]);
 
-  // Real elapsed seconds banked so far "today", live-including the current run.
-  const liveTodaySeconds = () => {
-    if (!running || !runStartedAtRef.current) return todaySeconds;
-    const ranMs = Date.now() - runStartedAtRef.current;
-    return todaySeconds + Math.max(0, ranMs / 1000);
+  // True elapsed stopwatch seconds right now, live-including the current run.
+  const liveStopwatch = () => {
+    if (!runningRef.current || !runStartedAtRef.current) return bankedRef.current;
+    const ranSec = Math.max(0, (Date.now() - runStartedAtRef.current) / 1000);
+    return bankedRef.current + ranSec;
+  };
+
+  // Accepts { seconds, taskSeconds } learned from Firestore (initial load or
+  // live sync). Stopwatch `seconds` only ever moves bankedRef FORWARD (and
+  // re-stamps the run start so a run in progress doesn't double-count).
+  // `taskSeconds` is just mirrored as-is — it's owned by useTasks.js, not us.
+  const applyRemote = ({ seconds, taskSeconds }) => {
+    let changed = false;
+    if (seconds > bankedRef.current) {
+      bankedRef.current = seconds;
+      if (runningRef.current) runStartedAtRef.current = Date.now();
+      changed = true;
+    }
+    if (taskSeconds !== taskSecondsRef.current) {
+      taskSecondsRef.current = taskSeconds;
+      changed = true;
+    }
+    if (changed) forceTick((n) => n + 1);
   };
 
   // load today's value once, then keep listening for cross-device changes
   useEffect(() => {
     if (!uid) return;
-    let unsub = () => {};
+    bankedRef.current = 0;
+    taskSecondsRef.current = 0;
+    sessionBaseRef.current = 0;
+    runStartedAtRef.current = runningRef.current ? Date.now() : null;
 
-    const applyRemoteValue = (s) => {
-      setTodaySeconds((cur) => {
-        if (s <= cur) return cur;
-        // We're about to move the banked baseline forward. If a run is in
-        // progress, runStartedAtRef marks when the *old* baseline started
-        // accumulating — if we don't move it too, the seconds already
-        // folded into the new banked value `s` get counted a second time
-        // on top of the elapsed-since-runStartedAt calculation. This also
-        // guards against the initial getStudyDay() load resolving with a
-        // stale/lower number and yanking the on-screen time backward.
-        if (runningRef.current && runStartedAtRef.current) {
-          runStartedAtRef.current = Date.now();
-        }
-        return s;
-      });
-    };
+    let cancelled = false;
+    getStudyDay(uid, dayKey).then((d) => { if (!cancelled) applyRemote(d); });
+    const unsub = watchStudyDay(uid, dayKey, applyRemote);
 
-    getStudyDay(uid, dayKey).then(applyRemoteValue);
-    unsub = watchStudyDay(uid, dayKey, applyRemoteValue);
-    return unsub;
+    return () => { cancelled = true; unsub(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, dayKey]);
 
-  // 1s re-render tick + midnight rollover check. This no longer *accumulates*
-  // time itself — it just forces a re-render (so the UI visibly counts up)
-  // and checks whether we've crossed into a new day. The actual elapsed
-  // value always comes from liveTodaySeconds() / real timestamps, so even if
-  // this interval gets throttled while the screen is off, nothing is lost.
+  // 1s re-render tick + midnight rollover check. Doesn't accumulate time
+  // itself — just forces a re-render so the UI visibly counts up, and
+  // checks whether we've crossed into a new day.
   useEffect(() => {
     const id = setInterval(() => {
       const key = dayKeyFor(new Date());
       if (key !== dayKey) {
-        if (uid) setStudyDay(uid, dayKey, Math.floor(liveTodaySeconds())); // flush the finished day
+        if (uid) setStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
+        bankedRef.current = 0;
+        taskSecondsRef.current = 0;
+        sessionBaseRef.current = 0;
+        runStartedAtRef.current = runningRef.current ? Date.now() : null;
         setDayKey(key);
-        setTodaySeconds(0);     // auto-reset right after midnight
-        setDisplayOffset(0);    // stopwatch face resets too for the new day
-        runStartedAtRef.current = running ? Date.now() : null;
         return;
       }
       forceTick((n) => n + 1);
     }, 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayKey, uid, running]);
+  }, [dayKey, uid]);
 
   // periodic flush to Firestore while running (banks the live wall-clock value)
   useEffect(() => {
     if (!uid) return;
     const id = setInterval(() => {
-      if (running && Date.now() - flushedAtRef.current > FLUSH_MS) {
+      if (runningRef.current && Date.now() - flushedAtRef.current > FLUSH_MS) {
         flushedAtRef.current = Date.now();
-        setStudyDay(uid, dayKey, Math.floor(liveTodaySeconds()));
+        setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
       }
     }, 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, uid, dayKey]);
+  }, [uid, dayKey]);
 
   const toggle = () => {
     setRunning((r) => {
       const next = !r;
+      runningRef.current = next;
       if (next) {
         // starting/resuming: mark the real start time of this run
         runStartedAtRef.current = Date.now();
       } else {
         // pausing: bank the real elapsed time and stop tracking a run start
-        const banked = Math.floor(liveTodaySeconds());
-        setTodaySeconds(banked);
+        const banked = Math.floor(liveStopwatch());
+        bankedRef.current = banked;
         runStartedAtRef.current = null;
         if (uid) setStudyDay(uid, dayKey, banked);
       }
@@ -132,7 +148,7 @@ export function useStopwatch(uid) {
   useEffect(() => {
     if (!uid) return;
     const flushNow = () => {
-      if (running) setStudyDay(uid, dayKey, Math.floor(liveTodaySeconds()));
+      if (runningRef.current) setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
     };
     const onVisibility = () => {
       forceTick((n) => n + 1);
@@ -146,16 +162,16 @@ export function useStopwatch(uid) {
       window.removeEventListener("beforeunload", flushNow);
       window.removeEventListener("pagehide", flushNow);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, dayKey, running]);
+  }, [uid, dayKey]);
 
-  // Zeroes only the stopwatch FACE (via an offset). "Time today"
-  // (todaySeconds) is untouched and keeps counting in the background — it
-  // only resets at midnight.
-  const reset = () => setDisplayOffset(liveTodaySeconds());
+  // Zeroes only the stopwatch FACE (via a snapshot of the current banked
+  // stopwatch total). "Time today" is untouched and keeps counting in the
+  // background — it only resets automatically at midnight.
+  const reset = () => { sessionBaseRef.current = liveStopwatch(); forceTick((n) => n + 1); };
 
-  const live = liveTodaySeconds();
-  const displaySeconds = Math.max(0, live - displayOffset);
+  const liveSw = liveStopwatch();
+  const displaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
+  const todaySeconds = liveSw + taskSecondsRef.current;
 
-  return { seconds: displaySeconds, todaySeconds: live, running, toggle, reset, dayKey };
+  return { seconds: displaySeconds, todaySeconds, running, toggle, reset, dayKey };
 }
