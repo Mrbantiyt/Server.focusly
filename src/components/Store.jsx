@@ -22,19 +22,29 @@ const MOOD_PACK = [
   { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.png", price: 500 },
 ];
 
+const BLACK_PACK = [
+  { id: "black-skeleton", name: "Eclipse Reaper", img: "/store/black-skeleton.png", price: 900 },
+  { id: "black-allseeing", name: "All-Seeing Coil", img: "/store/black-allseeing.png", price: 500 },
+  { id: "black-sunmoon", name: "Solstice Oracle", img: "/store/black-sunmoon.png", price: 500 },
+  { id: "black-mystic-eye", name: "Mystic Sigil Eye", img: "/store/black-mystic-eye.png", price: 500 },
+  { id: "black-eye-star", name: "Starlit Watcher", img: "/store/black-eye-star.png", price: 500 },
+  { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.png", price: 500 },
+];
+
 // Flat lookup used elsewhere in the app (e.g. resolving the active mascot image).
-export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK];
+export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK, ...BLACK_PACK];
 
 const PACKS = [
   { title: "Cosmic Voyager Theme Pack", items: COSMIC_VOYAGER_PACK, layout: "grid" },
   { title: "Mood Pack", items: MOOD_PACK, layout: "list" },
+  { title: "Black", items: BLACK_PACK, layout: "grid" },
 ];
 
 function CoinPill({ value }) {
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white">
       <span className="w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px]"
-        style={{ background: "#F5B301", color: "#fff" }}>K</span>
+        style={{ background: "#F5B301", color: "#fff" }}>F</span>
       <span className="font-display font-bold text-sm" style={{ color: "#F5B301" }}>{value}</span>
     </div>
   );
@@ -74,7 +84,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
           <span className="font-display font-bold text-lg" style={{ color: COL.ink }}>Store</span>
           <div style={neu(false, 999)} className="flex items-center gap-1.5 px-3 py-1.5">
             <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
-              style={{ background: "#F5B301", color: "#fff" }}>K</span>
+              style={{ background: "#F5B301", color: "#fff" }}>F</span>
             <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{coins}</span>
           </div>
         </div>
@@ -113,7 +123,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
                           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
                         >
                           <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
-                            style={{ background: "#F5B301", color: "#fff" }}>K</span>
+                            style={{ background: "#F5B301", color: "#fff" }}>F</span>
                           <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
                             {isBusy ? "…" : item.price}
                           </span>

@@ -15,11 +15,25 @@ export default function Tasks({ uid, tasks }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
 
-  const toggleRun = (t) => updateTask(uid, t.id, { running: !t.running });
+  // Starting/resuming stamps `startedAt` with the current real time, which is
+  // what lets elapsed time be recovered correctly even if the screen turns
+  // off or the app is backgrounded while it runs (see useTasks.js). Pausing
+  // banks the real elapsed time into `elapsed` and clears `startedAt`.
+  const toggleRun = (t) => {
+    if (t.running) {
+      const ranMs = t.startedAt ? Date.now() - t.startedAt : 0;
+      const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
+      updateTask(uid, t.id, { running: false, startedAt: null, elapsed: finalElapsed });
+    } else {
+      updateTask(uid, t.id, { running: true, startedAt: Date.now() });
+    }
+  };
   const toggleManualDone = (t) => {
     // only used for tasks with no goals — goal-based tasks auto-complete
     if ((t.goals || []).length > 0) return;
-    updateTask(uid, t.id, { done: !t.done, running: false });
+    const ranMs = t.running && t.startedAt ? Date.now() - t.startedAt : 0;
+    const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
+    updateTask(uid, t.id, { done: !t.done, running: false, startedAt: null, elapsed: finalElapsed });
   };
   const remove = (id) => deleteTask(uid, id);
   const add = () => {
