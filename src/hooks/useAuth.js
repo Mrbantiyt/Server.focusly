@@ -31,7 +31,7 @@ export function useAuth() {
     try {
       await updateProfile(result.user, { displayName: username });
       await ensureUserProfile(result.user);
-      await claimUsername(result.user.uid, username);
+      await claimUsername(result.user.uid, username, email);
     } catch (e) {
       // Roll back: if profile/username setup fails, don't leave the user
       // stuck signed-in with a half-created account.
