@@ -94,12 +94,26 @@ export async function addGoal(uid, taskId, currentGoals, text) {
 // Mark a goal done/undone. When marking done, `photoPath` (from
 // uploadProofPhoto) is attached as proof. The parent task auto-completes
 // once every goal is done, and auto-reopens if any goal is undone.
-export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, photoPath = null) {
+// `taskState` (the current task's { elapsed, running, startedAt }) is used
+// so that when the task auto-completes, its running timer is stopped and
+// its real elapsed time (including whatever ran since it was last started —
+// see useTasks.js) is banked correctly, instead of leaving it "running"
+// forever in the background.
+export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, photoPath = null, taskState = {}) {
   const goals = (currentGoals || []).map((g) =>
     g.id === goalId ? { ...g, done: isDone, photoPath: isDone ? photoPath : null } : g
   );
   const allDone = goals.length > 0 && goals.every((g) => g.done);
-  await updateTask(uid, taskId, { goals, done: allDone });
+
+  const patch = { goals, done: allDone };
+  if (allDone && taskState.running) {
+    const ranMs = taskState.startedAt ? Date.now() - taskState.startedAt : 0;
+    patch.elapsed = Math.floor((taskState.elapsed || 0) + Math.max(0, ranMs / 1000));
+    patch.running = false;
+    patch.startedAt = null;
+  }
+
+  await updateTask(uid, taskId, patch);
   return goals;
 }
 
@@ -155,7 +169,17 @@ export async function addXp(uid, amount) {
   const prevLevel = levelFromXp(prevXp).level;
   const newLevel = levelFromXp(newXp).level;
   const levelsGained = Math.max(0, newLevel - prevLevel);
-  const newCoins = prevCoins + levelsGained * 1000;
+
+  // Coin reward scales with the level reached: reaching level 1 pays 1000,
+  // level 2 pays 2000, level 3 pays 3000, etc. — i.e. level * 1000 for each
+  // level crossed, not a flat 1000 per level. If several levels are gained
+  // in one jump (e.g. a big XP reward), each crossed level's own reward is
+  // added up (so 1 -> 3 pays 2000 + 3000, not just 2 * 1000).
+  let coinsEarned = 0;
+  for (let lvl = prevLevel + 1; lvl <= newLevel; lvl++) {
+    coinsEarned += lvl * 1000;
+  }
+  const newCoins = prevCoins + coinsEarned;
 
   await setDoc(ref, { xp: newXp, coins: newCoins }, { merge: true });
   return { xp: newXp, coins: newCoins, level: newLevel, levelsGained };
