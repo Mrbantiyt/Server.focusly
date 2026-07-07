@@ -1,17 +1,23 @@
 // src/lib/firestore.js
 import {
   doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, where, documentId, serverTimestamp, runTransaction,
+  onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
 
-// One doc per user per study-day: users/{uid}/studyDays/{dayKey} = { seconds }
+// One doc per user per study-day: users/{uid}/studyDays/{dayKey} = {
+//   seconds      <- from the main Study Stopwatch
+//   taskSeconds  <- from running task timers (Tasks tab), added incrementally
+//                   as sessions run today, so switching days never carries
+//                   a task's older/other-day progress into today's total.
+// }
 export async function getStudyDay(uid, dayKey) {
   const ref = doc(db, "users", uid, "studyDays", dayKey);
   const snap = await getDoc(ref);
-  return snap.exists() ? snap.data().seconds || 0 : 0;
+  const d = snap.exists() ? snap.data() : {};
+  return { seconds: d.seconds || 0, taskSeconds: d.taskSeconds || 0 };
 }
 
 export async function setStudyDay(uid, dayKey, seconds) {
@@ -19,20 +25,37 @@ export async function setStudyDay(uid, dayKey, seconds) {
   await setDoc(ref, { seconds, updatedAt: serverTimestamp() }, { merge: true });
 }
 
+// Atomically adds `deltaSeconds` (can be fractional-free, we always pass a
+// whole number) of task time onto today's doc, without needing to read the
+// current value first — safe even if the stopwatch is flushing `seconds` to
+// the same doc at the same moment.
+export async function addTaskSeconds(uid, dayKey, deltaSeconds) {
+  if (!deltaSeconds || deltaSeconds <= 0) return;
+  const ref = doc(db, "users", uid, "studyDays", dayKey);
+  await setDoc(ref, { taskSeconds: increment(deltaSeconds), updatedAt: serverTimestamp() }, { merge: true });
+}
+
 // Live-listen to today's doc so the stopwatch stays in sync across tabs/devices
 export function watchStudyDay(uid, dayKey, cb) {
   const ref = doc(db, "users", uid, "studyDays", dayKey);
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data().seconds || 0 : 0));
+  return onSnapshot(ref, (snap) => {
+    const d = snap.exists() ? snap.data() : {};
+    cb({ seconds: d.seconds || 0, taskSeconds: d.taskSeconds || 0 });
+  });
 }
 
 // Range query across day-key docs (day keys are "YYYY-MM-DD" strings, so they
 // sort correctly) — used to fill the calendar and the 7-day/1-month graph.
+// Each day's total includes both stopwatch seconds and task seconds.
 export function watchStudyHistory(uid, startKey, endKey, cb) {
   const ref = collection(db, "users", uid, "studyDays");
   const q = query(ref, where(documentId(), ">=", startKey), where(documentId(), "<=", endKey));
   return onSnapshot(q, (snap) => {
     const history = {};
-    snap.forEach((d) => { history[d.id] = d.data().seconds || 0; });
+    snap.forEach((d) => {
+      const data = d.data();
+      history[d.id] = (data.seconds || 0) + (data.taskSeconds || 0);
+    });
     cb(history);
   });
 }
