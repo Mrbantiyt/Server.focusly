@@ -11,5 +11,25 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
     }
+
+    // usernames/{usernameLower} = { uid, email }
+    // Must be publicly readable: logging in with a username (instead of an
+    // email) looks up this doc BEFORE the user is authenticated, to find
+    // the email to pass to Firebase Auth. Email is duplicated here (not
+    // just on users/{uid}) for the same reason — users/{uid} isn't
+    // readable pre-auth. Writes are still locked down — only the user who
+    // owns that uid can claim/release a username.
+    match /usernames/{usernameLower} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(["uid", "email"]);
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(["uid", "email"]);
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+    }
   }
 }
