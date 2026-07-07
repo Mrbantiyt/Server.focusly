@@ -1,7 +1,7 @@
 // src/lib/firestore.js
 import {
   doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, where, documentId, serverTimestamp,
+  onSnapshot, query, where, documentId, serverTimestamp, runTransaction,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -221,4 +221,73 @@ export async function updateUserProfile(uid, patch) {
 export function watchUserProfile(uid, cb) {
   const ref = doc(db, "users", uid);
   return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+}
+
+/* --------------------------------- usernames ------------------------------------ */
+// A separate `usernames/{usernameLower}` collection is used as a reservation
+// table so we can atomically guarantee no two users ever hold the same
+// username (Firestore has no unique-constraint on fields, only on doc IDs).
+// Each doc = { uid }. The user's own profile also stores `username` /
+// `usernameLower` for display + lookups.
+
+function normalizeUsername(username) {
+  return (username || "").trim().toLowerCase();
+}
+
+export function isValidUsername(username) {
+  return /^[a-zA-Z0-9_.]{3,20}$/.test((username || "").trim());
+}
+
+export async function isUsernameAvailable(username) {
+  const key = normalizeUsername(username);
+  if (!key) return false;
+  const ref = doc(db, "usernames", key);
+  const snap = await getDoc(ref);
+  return !snap.exists();
+}
+
+// Atomically claims `username` for `uid`, releasing any username the user
+// previously held. Throws if the username is invalid or already taken by
+// someone else.
+export async function claimUsername(uid, username) {
+  const trimmed = (username || "").trim();
+  if (!isValidUsername(trimmed)) {
+    throw new Error("Username must be 3-20 characters: letters, numbers, _ or . only.");
+  }
+  const key = normalizeUsername(trimmed);
+  const usernameRef = doc(db, "usernames", key);
+  const userRef = doc(db, "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    const usernameSnap = await tx.get(usernameRef);
+    if (usernameSnap.exists() && usernameSnap.data().uid !== uid) {
+      throw new Error("That username is already taken.");
+    }
+    const userSnap = await tx.get(userRef);
+    const prevUsernameLower = userSnap.exists() ? userSnap.data().usernameLower : null;
+
+    // Release the user's previous username reservation, if different.
+    if (prevUsernameLower && prevUsernameLower !== key) {
+      const prevRef = doc(db, "usernames", prevUsernameLower);
+      tx.delete(prevRef);
+    }
+
+    tx.set(usernameRef, { uid }, { merge: true });
+    tx.set(userRef, { username: trimmed, usernameLower: key }, { merge: true });
+  });
+
+  return trimmed;
+}
+
+// Looks up the email associated with a username, so users can log in with
+// either their username or their email (Firebase Auth itself only accepts
+// email + password).
+export async function getEmailForUsername(username) {
+  const key = normalizeUsername(username);
+  const ref = doc(db, "usernames", key);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  const uid = snap.data().uid;
+  const userSnap = await getDoc(doc(db, "users", uid));
+  return userSnap.exists() ? userSnap.data().email || null : null;
 }
