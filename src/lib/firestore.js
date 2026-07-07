@@ -281,7 +281,7 @@ export async function isUsernameAvailable(username) {
 // Atomically claims `username` for `uid`, releasing any username the user
 // previously held. Throws if the username is invalid or already taken by
 // someone else.
-export async function claimUsername(uid, username) {
+export async function claimUsername(uid, username, email) {
   const trimmed = (username || "").trim().replace(/^@/, "");
   if (!isValidUsername(trimmed)) {
     throw new Error("Username must be 3-20 characters: letters, numbers, _ or . only.");
@@ -304,7 +304,10 @@ export async function claimUsername(uid, username) {
       tx.delete(prevRef);
     }
 
-    tx.set(usernameRef, { uid }, { merge: true });
+    // Email is duplicated onto the usernames doc (not just users/{uid})
+    // because username-login looks this doc up BEFORE the user is
+    // authenticated, and users/{uid} is only readable once signed in.
+    tx.set(usernameRef, { uid, email: email || null }, { merge: true });
     tx.set(userRef, { username: trimmed, usernameLower: key }, { merge: true });
   });
 
@@ -319,7 +322,5 @@ export async function getEmailForUsername(username) {
   const ref = doc(db, "usernames", key);
   const snap = await getDoc(ref);
   if (!snap.exists()) return null;
-  const uid = snap.data().uid;
-  const userSnap = await getDoc(doc(db, "users", uid));
-  return userSnap.exists() ? userSnap.data().email || null : null;
+  return snap.data().email || null;
 }
