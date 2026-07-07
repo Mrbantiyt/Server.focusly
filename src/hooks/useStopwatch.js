@@ -35,6 +35,9 @@ export function useStopwatch(uid) {
   const [, forceTick] = useState(0);
   const flushedAtRef = useRef(0);
   const runStartedAtRef = useRef(null); // Date.now() when the current run began, or null if paused
+  const runningRef = useRef(false); // mirrors `running`, but readable from effects that don't re-run on every toggle
+
+  useEffect(() => { runningRef.current = running; }, [running]);
 
   // Real elapsed seconds banked so far "today", live-including the current run.
   const liveTodaySeconds = () => {
@@ -52,8 +55,20 @@ export function useStopwatch(uid) {
     });
     unsub = watchStudyDay(uid, dayKey, (s) => {
       // don't fight with our own local ticking — only accept remote value
-      // if it's meaningfully ahead (e.g. same account open on another device)
-      setTodaySeconds((cur) => (s > cur ? s : cur));
+      // if it's meaningfully ahead (e.g. same account open on another device,
+      // or our own periodic flush echoing back)
+      setTodaySeconds((cur) => {
+        if (s <= cur) return cur;
+        // We're about to move the banked baseline forward. If a run is in
+        // progress, runStartedAtRef marks when the *old* baseline started
+        // accumulating — if we don't move it too, the seconds already
+        // folded into the new banked value `s` get counted a second time
+        // on top of the elapsed-since-runStartedAt calculation.
+        if (runningRef.current && runStartedAtRef.current) {
+          runStartedAtRef.current = Date.now();
+        }
+        return s;
+      });
     });
     return unsub;
   }, [uid, dayKey]);
