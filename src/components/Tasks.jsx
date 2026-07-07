@@ -11,16 +11,19 @@ const TAG_COLOR = { High: COL.coral, Medium: COL.blue, Low: COL.mint };
 // `tasks` is passed down from App.jsx (via the useTasks hook), which keeps
 // ticking a running task's elapsed time even while this tab isn't open —
 // see src/hooks/useTasks.js for why that used to break.
-export default function Tasks({ uid, tasks }) {
+export default function Tasks({ uid, tasks, flushTaskNow }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
 
   // Starting/resuming stamps `startedAt` with the current real time, which is
   // what lets elapsed time be recovered correctly even if the screen turns
   // off or the app is backgrounded while it runs (see useTasks.js). Pausing
-  // banks the real elapsed time into `elapsed` and clears `startedAt`.
+  // banks the real elapsed time into `elapsed` and clears `startedAt`, and
+  // immediately credits whatever ran today to "Time today" rather than
+  // waiting for the next periodic flush.
   const toggleRun = (t) => {
     if (t.running) {
+      flushTaskNow?.(t.id);
       const ranMs = t.startedAt ? Date.now() - t.startedAt : 0;
       const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
       updateTask(uid, t.id, { running: false, startedAt: null, elapsed: finalElapsed });
@@ -31,6 +34,7 @@ export default function Tasks({ uid, tasks }) {
   const toggleManualDone = (t) => {
     // only used for tasks with no goals — goal-based tasks auto-complete
     if ((t.goals || []).length > 0) return;
+    if (t.running) flushTaskNow?.(t.id);
     const ranMs = t.running && t.startedAt ? Date.now() - t.startedAt : 0;
     const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
     updateTask(uid, t.id, { done: !t.done, running: false, startedAt: null, elapsed: finalElapsed });
