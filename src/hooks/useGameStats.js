@@ -9,7 +9,7 @@ const TICK_MS = 10000; // 5 XP every 10 seconds of active study time
 // Tracks XP / level / coins / streak for the signed-in user.
 // - XP grows only while the stopwatch (`running`) is true, +5 every 10s.
 // - Level derives from total XP: level 1 needs 100 XP, then +500 XP per level.
-// - Coins: +1000 credited automatically the moment a level is crossed.
+// - Coins: crossing into level N credits N*1000 coins (level 1 = 1000, level 2 = 2000, etc.)
 // - Streak: bumped once per calendar day on login (see registerDailyLogin).
 export function useGameStats(uid, running) {
   const [stats, setStats] = useState({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });

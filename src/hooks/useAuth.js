@@ -1,11 +1,11 @@
 // src/hooks/useAuth.js
 import { useEffect, useState } from "react";
 import {
-  onAuthStateChanged, signInWithPopup, signOut,
+  onAuthStateChanged, signOut,
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
   sendPasswordResetEmail, updateProfile,
 } from "firebase/auth";
-import { auth, googleProvider } from "../firebase";
+import { auth } from "../firebase";
 import { ensureUserProfile, claimUsername, getEmailForUsername, isUsernameAvailable } from "../lib/firestore";
 
 export function useAuth() {
@@ -19,12 +19,6 @@ export function useAuth() {
     });
     return unsub;
   }, []);
-
-  const loginWithGoogle = async () => {
-    const result = await signInWithPopup(auth, googleProvider);
-    await ensureUserProfile(result.user);
-    return result.user;
-  };
 
   // Signs up with username + email + password. Reserves the username first
   // (throws if taken) so we never end up with an auth account whose
@@ -63,5 +57,5 @@ export function useAuth() {
 
   const logout = () => signOut(auth);
 
-  return { user, loading, loginWithGoogle, signupWithEmail, loginWithEmail, resetPassword, logout };
+  return { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout };
 }
