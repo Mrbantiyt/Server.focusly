@@ -19,6 +19,7 @@ import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
+import Store, { STORE_ITEMS } from "./components/Store";
 
 const FONT = (
   <style>{`
@@ -46,6 +47,10 @@ export default function App() {
   const gameStats = useGameStats(user?.uid, running);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
+  const [showStore, setShowStore] = useState(false);
+
+  const activeMascotItem = STORE_ITEMS.find((it) => it.id === gameStats.activeMascot);
+  const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
 
   // Custom profile overrides (name / DP) stored in Firestore, layered on
   // top of the Google-auth user so a custom profile picture uploaded from
@@ -83,8 +88,10 @@ export default function App() {
                 streak={gameStats.streak}
                 level={gameStats.level}
                 coins={gameStats.coins}
+                mascotSrc={mascotSrc}
                 onOpenStreak={() => setShowStreak(true)}
                 onOpenLevel={() => setShowLevel(true)}
+                onOpenStore={() => setShowStore(true)}
               />
             </div>
 
@@ -146,6 +153,15 @@ export default function App() {
           streak={gameStats.streak}
           streakDays={gameStats.streakDays}
           onClose={() => setShowStreak(false)}
+        />
+      )}
+      {showStore && (
+        <Store
+          uid={user.uid}
+          coins={gameStats.coins}
+          ownedItems={gameStats.ownedItems}
+          activeMascot={gameStats.activeMascot}
+          onClose={() => setShowStore(false)}
         />
       )}
     </div>
