@@ -116,7 +116,7 @@ export default function Settings({ user, tasks, totalStudySeconds, coins = 0, st
         {editing ? (
           <div className="flex items-center gap-2">
             <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveName()}
-              className="font-body text-sm px-2 py-1 rounded-lg outline-none text-center" style={{ background: "#fff", color: COL.ink }} />
+              className="font-body text-sm px-2 py-1 rounded-lg outline-none text-center" style={{ background: COL.input, color: COL.ink }} />
             <button onClick={saveName} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: COL.mint }}>
               <Check size={13} color="#fff" />
             </button>
@@ -136,7 +136,7 @@ export default function Settings({ user, tasks, totalStudySeconds, coins = 0, st
               <input value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveUsername()}
                 className="font-body text-sm px-2 py-1 rounded-lg outline-none text-center"
-                style={{ background: "#fff", color: COL.ink }} />
+                style={{ background: COL.input, color: COL.ink }} />
               <button onClick={saveUsername} disabled={usernameBusy}
                 className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: COL.mint }}>
                 {usernameBusy ? <Loader2 size={13} color="#fff" className="animate-spin" /> : <Check size={13} color="#fff" />}
@@ -179,10 +179,10 @@ export default function Settings({ user, tasks, totalStudySeconds, coins = 0, st
             <form onSubmit={changePassword} className="flex flex-col gap-2 pt-1">
               <input type="password" placeholder="Current password" value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password"
-                className="w-full px-3 py-2 font-body text-sm rounded-xl outline-none" style={{ background: "#fff", color: COL.ink }} />
+                className="w-full px-3 py-2 font-body text-sm rounded-xl outline-none" style={{ background: COL.input, color: COL.ink }} />
               <input type="password" placeholder="New password" value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password"
-                className="w-full px-3 py-2 font-body text-sm rounded-xl outline-none" style={{ background: "#fff", color: COL.ink }} />
+                className="w-full px-3 py-2 font-body text-sm rounded-xl outline-none" style={{ background: COL.input, color: COL.ink }} />
               <button type="submit" disabled={passwordBusy} style={neu(false, 12)}
                 className="py-2.5 font-body font-medium text-sm active:scale-[0.98] transition disabled:opacity-60">
                 {passwordBusy ? "Updating…" : "Update password"}

@@ -81,7 +81,7 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
       <div className="flex items-center gap-3">
         <button onClick={onToggleRun} disabled={t.done}
           className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ background: t.running ? COL.violet : "#E9ECF6", opacity: t.done ? 0.4 : 1 }}>
+          style={{ background: t.running ? COL.violet : COL.track, opacity: t.done ? 0.4 : 1 }}>
           {t.running ? <Pause size={13} color="#fff" /> : <Play size={13} color={COL.sub} />}
         </button>
 
@@ -101,7 +101,7 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
         {!hasGoals && (
           <button onClick={onToggleManualDone}
             className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ border: `2px solid ${t.done ? COL.mint : "#D3D6E6"}`, background: t.done ? COL.mint : "transparent" }}>
+            style={{ border: `2px solid ${t.done ? COL.mint : COL.border}`, background: t.done ? COL.mint : "transparent" }}>
             {t.done && <Check size={13} color="#fff" />}
           </button>
         )}
@@ -112,9 +112,9 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
         )}
 
         <button onClick={onToggleOpen}>
-          {open ? <ChevronUp size={16} color="#C7CAD9" /> : <ChevronDown size={16} color="#C7CAD9" />}
+          {open ? <ChevronUp size={16} color=COL.sub /> : <ChevronDown size={16} color=COL.sub />}
         </button>
-        <button onClick={onRemove}><Trash2 size={15} color="#C7CAD9" /></button>
+        <button onClick={onRemove}><Trash2 size={15} color=COL.sub /></button>
       </div>
 
       {open && (
@@ -208,11 +208,11 @@ function GoalsPanel({ uid, task, goals }) {
             </div>
           ) : (
             <button onClick={() => pickPhoto(g.id)}
-              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: "2px solid #D3D6E6" }}>
+              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ border: `2px solid ${COL.border}` }}>
               <Camera size={11} color={COL.sub} />
             </button>
           )}
-          <button onClick={() => remove(g.id)}><Trash2 size={13} color="#C7CAD9" /></button>
+          <button onClick={() => remove(g.id)}><Trash2 size={13} color=COL.sub /></button>
         </div>
       ))}
 

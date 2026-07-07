@@ -32,7 +32,7 @@ export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, onClose
             </div>
           </div>
 
-          <div className="w-full h-2 rounded-full mb-3" style={{ background: "#DCE0EF" }}>
+          <div className="w-full h-2 rounded-full mb-3" style={{ background: COL.track }}>
             <div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, background: COL.violet }} />
           </div>
 

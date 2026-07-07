@@ -23,7 +23,7 @@ export function StopwatchCard({ seconds, running, onToggle, onReset }) {
       </div>
       <div className="relative" style={{ width: 180, height: 180 }}>
         <svg width="180" height="180" style={{ transform: "rotate(-90deg)" }}>
-          <circle cx="90" cy="90" r={R} fill="none" stroke="#E2E5F1" strokeWidth="12" />
+          <circle cx="90" cy="90" r={R} fill="none" stroke={COL.track} strokeWidth="12" />
           <circle cx="90" cy="90" r={R} fill="none" stroke={COL.violet} strokeWidth="12"
             strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - dayProgress)}
             style={{ transition: "stroke-dashoffset 1s linear" }} />

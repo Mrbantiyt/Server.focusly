@@ -40,7 +40,7 @@ export default function GraphView({ history, todayKey, todaySeconds }) {
               tick={{ fill: COL.sub, fontSize: 10, fontFamily: "Inter" }} />
             <Tooltip cursor={false} contentStyle={{ borderRadius: 12, border: "none", fontSize: 12 }} formatter={(v) => [`${v}h`, "studied"]} />
             <Bar dataKey="hrs" radius={[6, 6, 6, 6]}>
-              {data.map((d, i) => <Cell key={i} fill={i === data.length - 1 ? COL.violet : "#DADEF0"} />)}
+              {data.map((d, i) => <Cell key={i} fill={i === data.length - 1 ? COL.violet : COL.track} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

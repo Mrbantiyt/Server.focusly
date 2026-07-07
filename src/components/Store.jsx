@@ -42,7 +42,7 @@ const PACKS = [
 
 function CoinPill({ value }) {
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white">
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full" style={{ background: COL.card }}>
       <span className="w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px]"
         style={{ background: "#F5B301", color: "#fff" }}>F</span>
       <span className="font-display font-bold text-sm" style={{ color: "#F5B301" }}>{value}</span>
