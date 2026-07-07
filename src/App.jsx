@@ -37,7 +37,7 @@ const NAV = [
 ];
 
 export default function App() {
-  const { user, loading, loginWithGoogle, logout } = useAuth();
+  const { user, loading, loginWithGoogle, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
@@ -68,6 +68,11 @@ export default function App() {
         email: user.email,
         displayName: profileDoc?.name || user.displayName,
         photoURL: profileDoc?.photoURL || user.photoURL,
+        username: profileDoc?.username || null,
+        // Whether this account can change its password here (only accounts
+        // that signed up with email/password have one to change — Google
+        // accounts manage their password with Google instead).
+        hasPasswordAuth: user.providerData?.some((p) => p.providerId === "password") || false,
       }
     : null;
 
@@ -80,7 +85,12 @@ export default function App() {
         {loading ? (
           <div className="flex-1 flex items-center justify-center font-body text-sm" style={{ color: COL.sub }}>Loading…</div>
         ) : !user ? (
-          <Login onLogin={loginWithGoogle} />
+          <Login
+            onLogin={loginWithGoogle}
+            onSignupWithEmail={signupWithEmail}
+            onLoginWithEmail={loginWithEmail}
+            onResetPassword={resetPassword}
+          />
         ) : (
           <>
             <div className="px-5 pt-5">
