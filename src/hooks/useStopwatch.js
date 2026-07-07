@@ -50,26 +50,26 @@ export function useStopwatch(uid) {
   useEffect(() => {
     if (!uid) return;
     let unsub = () => {};
-    getStudyDay(uid, dayKey).then((s) => {
-      setTodaySeconds(s);
-    });
-    unsub = watchStudyDay(uid, dayKey, (s) => {
-      // don't fight with our own local ticking — only accept remote value
-      // if it's meaningfully ahead (e.g. same account open on another device,
-      // or our own periodic flush echoing back)
+
+    const applyRemoteValue = (s) => {
       setTodaySeconds((cur) => {
         if (s <= cur) return cur;
         // We're about to move the banked baseline forward. If a run is in
         // progress, runStartedAtRef marks when the *old* baseline started
         // accumulating — if we don't move it too, the seconds already
         // folded into the new banked value `s` get counted a second time
-        // on top of the elapsed-since-runStartedAt calculation.
+        // on top of the elapsed-since-runStartedAt calculation. This also
+        // guards against the initial getStudyDay() load resolving with a
+        // stale/lower number and yanking the on-screen time backward.
         if (runningRef.current && runStartedAtRef.current) {
           runStartedAtRef.current = Date.now();
         }
         return s;
       });
-    });
+    };
+
+    getStudyDay(uid, dayKey).then(applyRemoteValue);
+    unsub = watchStudyDay(uid, dayKey, applyRemoteValue);
     return unsub;
   }, [uid, dayKey]);
 
