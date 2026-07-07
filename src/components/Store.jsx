@@ -4,16 +4,40 @@ import { X, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { purchaseItem, setActiveMascot } from "../lib/firestore";
 
-// Cosmic Voyager Theme Pack — item catalogue.
+// All purchasable mascots, grouped into packs.
 // `img` files live in /public/store/ (served from site root as /store/...).
-export const STORE_ITEMS = [
+const COSMIC_VOYAGER_PACK = [
   { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.png", price: 5 },
   { id: "drago-cosmic", name: "Cosmic Drago", img: "/store/drago-cosmic.png", price: 10 },
   { id: "drago-supernova", name: "Supernova Drago", img: "/store/drago-supernova.png", price: 15 },
 ];
 
-function fmtCoins(n) {
-  return n;
+const MOOD_PACK = [
+  { id: "mr-brightside", name: "Mr.Brightside", img: "/store/mr-brightside.png", price: 35 },
+  { id: "aha-moment", name: "The Aha Moment", img: "/store/aha-moment.png", price: 200 },
+  { id: "pressure-cooker", name: "Pressure Cooker", img: "/store/pressure-cooker.png", price: 200 },
+  { id: "kai-njuring", name: "The Kai-njuring", img: "/store/kai-njuring.png", price: 125 },
+  { id: "man-of-the-match", name: "Man of the Match", img: "/store/man-of-the-match.png", price: 100 },
+  { id: "bond-james-bond", name: "Bond. James Bond.", img: "/store/bond-james-bond.png", price: 150 },
+  { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.png", price: 500 },
+];
+
+// Flat lookup used elsewhere in the app (e.g. resolving the active mascot image).
+export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK];
+
+const PACKS = [
+  { title: "Cosmic Voyager Theme Pack", items: COSMIC_VOYAGER_PACK, layout: "grid" },
+  { title: "Mood Pack", items: MOOD_PACK, layout: "list" },
+];
+
+function CoinPill({ value }) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white">
+      <span className="w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px]"
+        style={{ background: "#F5B301", color: "#fff" }}>K</span>
+      <span className="font-display font-bold text-sm" style={{ color: "#F5B301" }}>{value}</span>
+    </div>
+  );
 }
 
 export default function Store({ uid, coins, ownedItems, activeMascot, onClose }) {
@@ -51,12 +75,8 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
           <div style={neu(false, 999)} className="flex items-center gap-1.5 px-3 py-1.5">
             <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
               style={{ background: "#F5B301", color: "#fff" }}>K</span>
-            <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{fmtCoins(coins)}</span>
+            <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{coins}</span>
           </div>
-        </div>
-
-        <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
-          Cosmic Voyager Theme Pack
         </div>
 
         {error && (
@@ -65,37 +85,76 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {STORE_ITEMS.map((item) => {
-            const isOwned = owned.includes(item.id);
-            const isBusy = busyId === item.id;
-            return (
-              <div key={item.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
-                <img src={item.img} alt={item.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
-                <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{item.name}</div>
-                {isOwned ? (
-                  <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
-                    style={{ background: "rgba(63,207,163,0.15)", color: COL.mint }}>
-                    <Check size={12} /> Owned
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleBuy(item)}
-                    disabled={isBusy}
-                    style={neu(false, 999)}
-                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
-                  >
-                    <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
-                      style={{ background: "#F5B301", color: "#fff" }}>K</span>
-                    <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
-                      {isBusy ? "…" : item.price}
-                    </span>
-                  </button>
-                )}
+        {PACKS.map((pack) => (
+          <div key={pack.title} className="mb-6">
+            <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
+              {pack.title}
+            </div>
+
+            {pack.layout === "grid" ? (
+              <div className="grid grid-cols-2 gap-3">
+                {pack.items.map((item) => {
+                  const isOwned = owned.includes(item.id);
+                  const isBusy = busyId === item.id;
+                  return (
+                    <div key={item.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
+                      <img src={item.img} alt={item.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
+                      <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{item.name}</div>
+                      {isOwned ? (
+                        <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
+                          style={{ background: "rgba(63,207,163,0.15)", color: COL.mint }}>
+                          <Check size={12} /> Owned
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleBuy(item)}
+                          disabled={isBusy}
+                          style={neu(false, 999)}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
+                        >
+                          <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
+                            style={{ background: "#F5B301", color: "#fff" }}>K</span>
+                          <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
+                            {isBusy ? "…" : item.price}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {pack.items.map((item) => {
+                  const isOwned = owned.includes(item.id);
+                  const isBusy = busyId === item.id;
+                  return (
+                    <div key={item.id} style={neu(false, 22)} className="flex items-center gap-3 p-3">
+                      <img src={item.img} alt={item.name} className="w-14 h-14 rounded-2xl object-cover flex-shrink-0" />
+                      <div className="flex-1 font-display font-semibold text-sm" style={{ color: COL.ink }}>
+                        {item.name}
+                      </div>
+                      {isOwned ? (
+                        <div className="flex items-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs flex-shrink-0"
+                          style={{ background: "rgba(63,207,163,0.15)", color: COL.mint }}>
+                          <Check size={12} /> Owned
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleBuy(item)}
+                          disabled={isBusy}
+                          className="flex-shrink-0 active:scale-95 transition disabled:opacity-60"
+                        >
+                          <CoinPill value={isBusy ? "…" : item.price} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
 
         <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
           My Collection
