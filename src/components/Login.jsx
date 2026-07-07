@@ -1,7 +1,7 @@
 // src/components/Login.jsx
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { COL, neu } from "../theme";
+import { COL } from "../theme";
 
 const MODES = { LOGIN: "login", SIGNUP: "signup", RESET: "reset" };
 
@@ -189,8 +189,14 @@ function PasswordField({ placeholder, value, onChange, autoComplete }) {
 
 function SubmitButton({ busy, label }) {
   return (
-    <button type="submit" disabled={busy} style={neu(false, 14)}
-      className="w-full py-3 font-body font-medium text-sm active:scale-[0.98] transition disabled:opacity-60">
+    <button type="submit" disabled={busy}
+      style={{
+        borderRadius: 14,
+        background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+        boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+        color: "#FFFFFF",
+      }}
+      className="w-full py-3 font-body font-semibold text-sm active:scale-[0.98] transition disabled:opacity-60">
       {busy ? "Please wait…" : label}
     </button>
   );
