@@ -82,7 +82,7 @@ export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPass
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-5 px-8 text-center">
-      <img src="/logo.png" alt="Focusly" className="w-16 h-16 rounded-3xl object-cover" style={{ boxShadow: "0 10px 24px rgba(91,110,246,0.25)" }} />
+      <img src="/logo.webp" alt="Focusly" className="w-16 h-16 rounded-3xl object-cover" style={{ boxShadow: "0 10px 24px rgba(91,110,246,0.25)" }} />
       <div>
         <div className="font-display font-bold text-xl" style={{ color: COL.ink }}>Welcome to Focusly</div>
         <div className="font-body text-sm mt-1" style={{ color: COL.sub }}>
@@ -147,7 +147,7 @@ function Field({ placeholder, type = "text", value, onChange, autoComplete }) {
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       autoComplete={autoComplete}
-      style={neu(true, 14)}
+      style={{ ...neu(true, 14), color: COL.ink }}
       className="w-full px-4 py-3 font-body text-sm outline-none"
     />
   );
@@ -163,7 +163,7 @@ function PasswordField({ placeholder, value, onChange, autoComplete }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
-        style={neu(true, 14)}
+        style={{ ...neu(true, 14), color: COL.ink }}
         className="w-full px-4 py-3 pr-11 font-body text-sm outline-none"
       />
       <button

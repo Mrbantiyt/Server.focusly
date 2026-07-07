@@ -38,7 +38,7 @@ export default function CalendarView({ history, todayKey, todaySeconds }) {
           return (
             <div key={i} className="flex flex-col items-center gap-0.5">
               <div className="w-8 h-8 rounded-full flex items-center justify-center font-body text-xs"
-                style={{ background: isToday ? COL.ink : "transparent", color: isToday ? "#fff" : COL.ink }}>{day}</div>
+                style={{ background: isToday ? COL.ink : "transparent", color: isToday ? "#15151C" : COL.ink }}>{day}</div>
               <span className="font-body text-[9px]" style={{ color: secs > 0 ? COL.violet : "transparent" }}>
                 {secs > 0 ? fmtHrs(secs) : "•"}
               </span>
