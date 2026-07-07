@@ -157,7 +157,11 @@ function GoalsPanel({ uid, task, goals }) {
     setBusyId(goalId);
     try {
       const path = await uploadProofPhoto(file, `Goal proof — ${task.title}`);
-      await setGoalDone(uid, task.id, goals, goalId, true, path);
+      await setGoalDone(uid, task.id, goals, goalId, true, path, {
+        elapsed: task.elapsed,
+        running: task.running,
+        startedAt: task.startedAt,
+      });
     } catch (e) {
       alert("Upload failed: " + e.message);
     } finally {

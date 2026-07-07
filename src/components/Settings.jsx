@@ -162,7 +162,7 @@ export default function Settings({ user, tasks, totalStudySeconds, coins = 0, st
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
         <StatTile icon={ListChecks} accent={COL.mint} label="Tasks completed" value={`${tasksDone}/${tasks.length}`} />
         <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${goalsDone}/${goalsTotal}`} />
-        <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="1000 coins = 1 Level" />
+        <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
         <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
         <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
       </div>

@@ -4,7 +4,7 @@ import { COL, neu } from "../theme";
 
 const MODES = { LOGIN: "login", SIGNUP: "signup", RESET: "reset" };
 
-export default function Login({ onLogin, onSignupWithEmail, onLoginWithEmail, onResetPassword }) {
+export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPassword }) {
   const [mode, setMode] = useState(MODES.LOGIN);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -21,18 +21,6 @@ export default function Login({ onLogin, onSignupWithEmail, onLoginWithEmail, on
   const switchMode = (m) => {
     resetMessages();
     setMode(m);
-  };
-
-  const handleGoogle = async () => {
-    resetMessages();
-    setBusy(true);
-    try {
-      await onLogin();
-    } catch (e) {
-      setError(e.message || "Sign-in failed. Please try again.");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const handleSignup = async (e) => {
@@ -99,21 +87,6 @@ export default function Login({ onLogin, onSignupWithEmail, onLoginWithEmail, on
         <div className="font-body text-sm mt-1" style={{ color: COL.sub }}>
           {mode === MODES.SIGNUP ? "Create an account to get started" : mode === MODES.RESET ? "Reset your password" : "Sign in to sync your study time across devices"}
         </div>
-      </div>
-
-      <button onClick={handleGoogle} disabled={busy} style={neu(false, 16)}
-        className="w-full flex items-center justify-center gap-3 py-3.5 active:scale-[0.98] transition disabled:opacity-60">
-        <span className="w-5 h-5 rounded-full flex items-center justify-center font-display font-bold text-[11px] text-white"
-          style={{ background: "conic-gradient(from 0deg, #EA4335, #FBBC05, #34A853, #4285F4, #EA4335)" }}>G</span>
-        <span className="font-body font-medium text-sm" style={{ color: COL.ink }}>
-          {busy ? "Signing in…" : "Continue with Google"}
-        </span>
-      </button>
-
-      <div className="w-full flex items-center gap-3">
-        <div className="flex-1 h-px" style={{ background: COL.sub, opacity: 0.25 }} />
-        <span className="font-body text-xs" style={{ color: COL.sub }}>or</span>
-        <div className="flex-1 h-px" style={{ background: COL.sub, opacity: 0.25 }} />
       </div>
 
       {mode === MODES.SIGNUP && (
