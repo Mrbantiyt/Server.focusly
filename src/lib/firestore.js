@@ -263,11 +263,11 @@ export function watchUserProfile(uid, cb) {
 // `usernameLower` for display + lookups.
 
 function normalizeUsername(username) {
-  return (username || "").trim().toLowerCase();
+  return (username || "").trim().replace(/^@/, "").toLowerCase();
 }
 
 export function isValidUsername(username) {
-  return /^[a-zA-Z0-9_.]{3,20}$/.test((username || "").trim());
+  return /^[a-zA-Z0-9_.]{3,20}$/.test((username || "").trim().replace(/^@/, ""));
 }
 
 export async function isUsernameAvailable(username) {
@@ -282,7 +282,7 @@ export async function isUsernameAvailable(username) {
 // previously held. Throws if the username is invalid or already taken by
 // someone else.
 export async function claimUsername(uid, username) {
-  const trimmed = (username || "").trim();
+  const trimmed = (username || "").trim().replace(/^@/, "");
   if (!isValidUsername(trimmed)) {
     throw new Error("Username must be 3-20 characters: letters, numbers, _ or . only.");
   }
