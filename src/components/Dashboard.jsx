@@ -5,9 +5,18 @@ import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
 import { StopwatchCard, StatCard } from "./StopwatchCard";
 
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour >= 0 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 16) return "Good afternoon";
+  if (hour >= 16 && hour < 19) return "Good evening";
+  return "Good night";
+}
+
 export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout }) {
   const doneCount = tasks.filter((t) => t.done).length;
   const name = user.displayName || "Student";
+  const greeting = getGreeting();
 
   return (
     <div className="flex flex-col gap-5">
@@ -20,7 +29,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
               style={{ background: `linear-gradient(135deg, ${COL.blue}, ${COL.violet})` }}>{name[0]}</div>
           )}
           <div>
-            <div className="font-body text-xs" style={{ color: COL.sub }}>Good morning</div>
+            <div className="font-body text-xs" style={{ color: COL.sub }}>{greeting}</div>
             <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>{name}</div>
           </div>
         </div>

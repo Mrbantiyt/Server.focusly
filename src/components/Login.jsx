@@ -1,5 +1,6 @@
 // src/components/Login.jsx
 import React, { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { COL, neu } from "../theme";
 
 const MODES = { LOGIN: "login", SIGNUP: "signup", RESET: "reset" };
@@ -93,7 +94,7 @@ export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPass
         <form onSubmit={handleSignup} className="w-full flex flex-col gap-3">
           <Field placeholder="Username" value={username} onChange={setUsername} autoComplete="username" />
           <Field placeholder="Email" type="email" value={email} onChange={setEmail} autoComplete="email" />
-          <Field placeholder="Password" type="password" value={password} onChange={setPassword} autoComplete="new-password" />
+          <PasswordField placeholder="Password" value={password} onChange={setPassword} autoComplete="new-password" />
           <SubmitButton busy={busy} label="Create account" />
         </form>
       )}
@@ -101,7 +102,7 @@ export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPass
       {mode === MODES.LOGIN && (
         <form onSubmit={handleLogin} className="w-full flex flex-col gap-3">
           <Field placeholder="Username or email" value={identifier} onChange={setIdentifier} autoComplete="username" />
-          <Field placeholder="Password" type="password" value={password} onChange={setPassword} autoComplete="current-password" />
+          <PasswordField placeholder="Password" value={password} onChange={setPassword} autoComplete="current-password" />
           <SubmitButton busy={busy} label="Log in" />
           <button type="button" onClick={() => switchMode(MODES.RESET)} className="font-body text-xs underline" style={{ color: COL.sub }}>
             Forgot password?
@@ -149,6 +150,33 @@ function Field({ placeholder, type = "text", value, onChange, autoComplete }) {
       style={neu(true, 14)}
       className="w-full px-4 py-3 font-body text-sm outline-none"
     />
+  );
+}
+
+function PasswordField({ placeholder, value, onChange, autoComplete }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative w-full">
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete={autoComplete}
+        style={neu(true, 14)}
+        className="w-full px-4 py-3 pr-11 font-body text-sm outline-none"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center"
+        style={{ color: COL.sub }}
+        aria-label={visible ? "Hide password" : "Show password"}
+        tabIndex={-1}
+      >
+        {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+      </button>
+    </div>
   );
 }
 
