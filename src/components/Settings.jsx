@@ -223,16 +223,63 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
 
 /* -------------------------------- Notifications -------------------------------- */
 
-function NotificationsPanel({ onBack }) {
+function NotificationsPanel({ uid, studyReminder, isMedianApp, onBack }) {
+  const [enabled, setEnabled] = useState(studyReminder?.enabled ?? false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const onToggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    setSaving(true);
+    setSaved(false);
+    try {
+      await updateUserProfile(uid, { studyReminder: { enabled: next } });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <PanelHeader title="Notifications" onBack={onBack} />
-      <div style={neu(true, 20)} className="p-6 text-center flex flex-col items-center gap-2">
-        <Bell size={28} color={COL.sub} />
-        <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Coming soon</div>
-        <div className="font-body text-xs" style={{ color: COL.sub }}>
-          Notification settings aren't set up yet — check back in a future update.
+
+      {!isMedianApp && (
+        <div style={neu(true, 20)} className="p-4 flex items-start gap-2.5">
+          <Bell size={16} color={COL.sub} className="mt-0.5 flex-shrink-0" />
+          <div className="font-body text-xs leading-relaxed" style={{ color: COL.sub }}>
+            Push notifications only work in the Focusly app (not in a browser tab). You can still turn this
+            on here — it'll take effect once you open Focusly from the app.
+          </div>
         </div>
+      )}
+
+      <div style={neu(false, 20)} className="p-4">
+        <button onClick={onToggle} className="w-full flex items-center justify-between text-left">
+          <div>
+            <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Study reminder</div>
+            <div className="font-body text-xs mt-0.5" style={{ color: COL.sub }}>
+              Get a daily push notification at 6:00 PM reminding you to study.
+            </div>
+          </div>
+          <div
+            className="w-11 h-6 rounded-full flex-shrink-0 relative transition-colors"
+            style={{ background: enabled ? COL.violet : COL.track }}
+          >
+            <div
+              className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
+              style={{ left: enabled ? 22 : 2 }}
+            />
+          </div>
+        </button>
+
+        {(saving || saved) && (
+          <div className="font-body text-[11px] mt-3" style={{ color: saved ? COL.mint : COL.sub }}>
+            {saving ? "Saving…" : "Saved"}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -373,12 +420,19 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, todaySeconds, totalStudySeconds, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, onLogout }) {
+export default function Settings({ user, tasks, todaySeconds, totalStudySeconds, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
   const [section, setSection] = useState(null); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} onBack={() => setSection(null)} />;
   if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} onBack={() => setSection(null)} />;
-  if (section === "notifications") return <NotificationsPanel onBack={() => setSection(null)} />;
+  if (section === "notifications") {
+    return (
+      <NotificationsPanel
+        uid={user.uid} studyReminder={studyReminder} isMedianApp={isMedianApp}
+        onBack={() => setSection(null)}
+      />
+    );
+  }
   if (section === "data") {
     return (
       <YourDataPanel
