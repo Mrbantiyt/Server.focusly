@@ -96,11 +96,11 @@ export async function addGoal(uid, taskId, currentGoals, text) {
 // Mark a goal done/undone. When marking done, `photoPath` (from
 // uploadProofPhoto) is attached as proof. The parent task auto-completes
 // once every goal is done, and auto-reopens if any goal is undone.
-// `taskState` (the current task's { elapsed, running, startedAt }) is used
-// so that when the task auto-completes, its running timer is stopped and
-// its real elapsed time (including whatever ran since it was last started —
-// see useTasks.js) is banked correctly, instead of leaving it "running"
-// forever in the background.
+// `taskState.elapsed` (passed in from Tasks.jsx) is already the LIVE
+// elapsed value for a running task (see useTasks.js's liveTasks mapping) —
+// it already accounts for time since `startedAt`. So when the task
+// auto-completes we just bank it as-is; adding (Date.now() - startedAt) on
+// top again would double-count the current run.
 export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, photoPath = null, taskState = {}) {
   const goals = (currentGoals || []).map((g) =>
     g.id === goalId ? { ...g, done: isDone, photoPath: isDone ? photoPath : null } : g
@@ -109,8 +109,7 @@ export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, pho
 
   const patch = { goals, done: allDone };
   if (allDone && taskState.running) {
-    const ranMs = taskState.startedAt ? Date.now() - taskState.startedAt : 0;
-    patch.elapsed = Math.floor((taskState.elapsed || 0) + Math.max(0, ranMs / 1000));
+    patch.elapsed = Math.floor(taskState.elapsed || 0);
     patch.running = false;
     patch.startedAt = null;
   }
