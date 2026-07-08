@@ -8,6 +8,7 @@ import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useTasks } from "./hooks/useTasks";
 import { useGameStats } from "./hooks/useGameStats";
 import { watchUserProfile } from "./lib/firestore";
+import { syncPushSubscription, isMedianApp } from "./lib/median";
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
@@ -76,6 +77,19 @@ export default function App() {
       }
     : null;
 
+  // If running inside the Median-wrapped native app, capture this device's
+  // OneSignal push subscription id so the server-side reminder cron job
+  // (see api/send-study-reminders.js) knows which device to notify. No-ops
+  // in a regular browser tab. Re-checked periodically since the OneSignal
+  // id may only become available a moment after the user grants push
+  // permission on first launch.
+  useEffect(() => {
+    if (!user?.uid || !isMedianApp()) return;
+    syncPushSubscription(user.uid);
+    const id = setInterval(() => syncPushSubscription(user.uid), 15000);
+    return () => clearInterval(id);
+  }, [user?.uid]);
+
   return (
     <div className="w-full min-h-screen flex items-center justify-center p-4" style={{ background: COL.bg }}>
       {FONT}
@@ -127,6 +141,8 @@ export default function App() {
                   todaySeconds={todaySeconds}
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
+                  studyReminder={profileDoc?.studyReminder}
+                  isMedianApp={isMedianApp()}
                   totalStudySeconds={
                     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
                   }
