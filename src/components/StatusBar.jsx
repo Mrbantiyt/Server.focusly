@@ -39,7 +39,7 @@ export default function StatusBar({ streak, level, coins, mascotSrc, onOpenStrea
           <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>Lv {level}</span>
         </Pill>
 
-        <Pill>
+        <Pill onClick={onOpenStore}>
           <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
             style={{ background: "#F5B301", color: "#fff" }}>F</span>
           <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{fmtCompact(coins)}</span>

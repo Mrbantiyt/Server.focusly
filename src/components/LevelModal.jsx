@@ -3,8 +3,13 @@ import React from "react";
 import { X, Shield } from "lucide-react";
 import { COL, neu } from "../theme";
 
-export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, onClose }) {
+export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, totalXp, totalXpForNextLevel, onClose }) {
+  // Progress bar fill still reflects how far through the CURRENT level you
+  // are (0-100%), but the number underneath now shows lifetime cumulative
+  // XP so it never resets to a small number on level-up — see
+  // xpNeededForLevel/levelFromXp in lib/firestore.js for how these are computed.
   const pct = Math.min(100, Math.round((xpIntoLevel / xpForNextLevel) * 100));
+  const fmt = (n) => Math.floor(n).toLocaleString("en-US");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
@@ -37,7 +42,7 @@ export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, onClose
           </div>
 
           <div className="font-body text-xs" style={{ color: COL.sub }}>
-            {xpIntoLevel}/{xpForNextLevel} XP
+            {fmt(totalXp)}/{fmt(totalXpForNextLevel)} XP
           </div>
         </div>
 
