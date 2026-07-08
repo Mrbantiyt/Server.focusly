@@ -91,10 +91,10 @@ export default function App() {
   }, [user?.uid]);
 
   return (
-    <div className="w-full min-h-screen flex items-center justify-center p-4" style={{ background: COL.bg }}>
+    <div className="w-full flex items-center justify-center" style={{ background: COL.bg, minHeight: "100dvh" }}>
       {FONT}
-      <div className="w-full max-w-sm rounded-[36px] overflow-hidden flex flex-col"
-        style={{ height: 780, background: COL.bg, boxShadow: "0 30px 60px rgba(90,95,140,0.25)" }}>
+      <div className="w-full flex flex-col"
+        style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", background: COL.bg }}>
 
         {loading ? (
           <div className="flex-1 flex items-center justify-center font-body text-sm" style={{ color: COL.sub }}>Loading…</div>
