@@ -15,14 +15,13 @@ export default function Tasks({ uid, tasks }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
 
-  // Starting/resuming stamps `startedAt` with the current real time, which is
-  // what lets elapsed time be recovered correctly even if the screen turns
-  // off or the app is backgrounded while it runs (see useTasks.js). Pausing
-  // banks the real elapsed time into `elapsed` and clears `startedAt`.
+  // `t.elapsed` here is already the LIVE value (see useTasks.js's liveTasks
+  // mapping) — it already includes time elapsed since `startedAt`. So on
+  // pause we just bank it as-is; we must NOT add (Date.now() - startedAt)
+  // again on top, or the current run gets counted twice.
   const toggleRun = (t) => {
     if (t.running) {
-      const ranMs = t.startedAt ? Date.now() - t.startedAt : 0;
-      const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
+      const finalElapsed = Math.floor(t.elapsed || 0);
       updateTask(uid, t.id, { running: false, startedAt: null, elapsed: finalElapsed });
     } else {
       updateTask(uid, t.id, { running: true, startedAt: Date.now() });
@@ -31,8 +30,7 @@ export default function Tasks({ uid, tasks }) {
   const toggleManualDone = (t) => {
     // only used for tasks with no goals — goal-based tasks auto-complete
     if ((t.goals || []).length > 0) return;
-    const ranMs = t.running && t.startedAt ? Date.now() - t.startedAt : 0;
-    const finalElapsed = Math.floor((t.elapsed || 0) + Math.max(0, ranMs / 1000));
+    const finalElapsed = Math.floor(t.elapsed || 0);
     updateTask(uid, t.id, { done: !t.done, running: false, startedAt: null, elapsed: finalElapsed });
   };
   const remove = (id) => deleteTask(uid, id);
