@@ -124,6 +124,9 @@ export default function App() {
                   coins={gameStats.coins}
                   streak={gameStats.streak}
                   level={gameStats.level}
+                  todaySeconds={todaySeconds}
+                  ownedItems={gameStats.ownedItems}
+                  activeMascot={gameStats.activeMascot}
                   totalStudySeconds={
                     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
                   }
