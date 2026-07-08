@@ -10,78 +10,94 @@
 // App.jsx (which stays mounted for the whole session, exactly like
 // useStopwatch already does for the main stopwatch), fixed that first bug.
 //
-// BUT: counting via `setInterval` ticks is still fundamentally fragile —
-// mobile browsers/webviews throttle or fully suspend JS timers once the
-// screen turns off or the app goes to the background (to save battery), so
-// a plain "add 1 every 1000ms" loop simply stops accumulating for however
-// long the screen was off, even though the interval itself is still alive
-// in memory.
+// SECOND BUG (fixed now): every periodic flush wrote the freshly-computed
+// `elapsed` to Firestore but left `startedAt` untouched. `onSnapshot` then
+// echoed that doc back down, and the next `liveElapsed` call computed
+// `elapsed + (Date.now() - startedAt) / 1000` — but `Date.now() - startedAt`
+// already covered the SAME run time that had just been folded into
+// `elapsed`, so it got added again on top of itself. Each flush cycle
+// compounded this, which is why the timer looked like it was leaping ahead
+// (e.g. 4s -> 11s, 14s -> 25s) instead of counting up smoothly.
 //
-// The fix: don't count ticks — measure real elapsed wall-clock time.
-// Each running task stores `startedAt` (a Date.now() epoch ms, set once
-// when the task is started/resumed). At any moment, the *true* elapsed
-// time is `elapsed + (Date.now() - startedAt) / 1000`, regardless of how
-// many timer ticks actually fired in between. The 1s interval below is now
-// only responsible for re-rendering the display and flushing to Firestore
-// periodically — even if it's throttled and only fires once every 30s
-// after the screen comes back on, it recomputes the correct total from the
-// timestamp difference, so no time is ever lost.
-//
-// NOTE: a task's own elapsed time is tracked entirely independently of the
-// Study Stopwatch / "Time today" on the Dashboard — running a task timer
-// does NOT add to "Time today". These are two intentionally separate
-// numbers.
+// The fix (mirroring useStopwatch.js, which never had this bug): keep the
+// banked total and run-start timestamp in local refs that are the single
+// source of truth for display. Every time we flush/bank elapsed time,
+// `startedAt` is re-stamped to "now" in the same breath — locally AND in
+// the Firestore write — so the next computation starts counting from zero
+// run-time again instead of double-adding what was just banked. Remote
+// snapshots are only applied if they don't fight an in-progress local run.
 import { useEffect, useRef, useState } from "react";
 import { watchTasks, updateTask } from "../lib/firestore";
 
-// Real elapsed seconds for a task right now, whether it's running or not.
-function liveElapsed(t) {
-  if (!t.running || !t.startedAt) return t.elapsed || 0;
-  const ranMs = Date.now() - t.startedAt;
-  return (t.elapsed || 0) + Math.max(0, ranMs / 1000);
-}
+const FLUSH_MS = 5000;
 
 export function useTasks(uid) {
   const [tasks, setTasks] = useState([]);
   const [, forceTick] = useState(0);
+
+  // Per-task local run state, keyed by task id — the source of truth for
+  // any task that's actively running, exactly like bankedRef/runStartedAtRef
+  // in useStopwatch.js. { banked, runStartedAt, flushedAt }
+  const runStateRef = useRef({});
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
+
+  const liveElapsed = (t) => {
+    const rs = runStateRef.current[t.id];
+    if (!t.running || !rs || !rs.runStartedAt) return t.elapsed || 0;
+    const ranSec = Math.max(0, (Date.now() - rs.runStartedAt) / 1000);
+    return rs.banked + ranSec;
+  };
 
   // live sync from Firestore — updates instantly across tabs/devices
   useEffect(() => {
     if (!uid) {
       setTasks([]);
+      runStateRef.current = {};
       return;
     }
-    return watchTasks(uid, setTasks);
+    return watchTasks(uid, (incoming) => {
+      // Reconcile local run state against the incoming docs. A task that
+      // just started running (or resumed) on THIS or another device gets a
+      // fresh runStartedAt stamped now; the doc's `elapsed` becomes the new
+      // banked base. A task that stopped running has its local run state
+      // cleared so liveElapsed falls back to the plain stored value.
+      const next = { ...runStateRef.current };
+      incoming.forEach((t) => {
+        const rs = next[t.id];
+        if (t.running) {
+          if (!rs) {
+            // just started running (locally or remotely) — begin a fresh run
+            next[t.id] = { banked: t.elapsed || 0, runStartedAt: Date.now(), flushedAt: Date.now() };
+          }
+          // else: already tracking this run locally — keep counting from
+          // our own runStartedAt; don't let a late-arriving echo of our own
+          // flush reset it and don't double count.
+        } else {
+          delete next[t.id];
+        }
+      });
+      runStateRef.current = next;
+      setTasks(incoming);
+    });
   }, [uid]);
 
-  // Re-render every second so running tasks visibly count up. Flushing to
-  // Firestore now runs on its own counter instead of checking
-  // `next % 5 === 0` — that check depended on a tick landing on an exact
-  // multiple of 5, but wall-clock-driven ticks drift and skip values, so it
-  // could go many seconds without writing, then write a much larger number
-  // all at once. The Firestore round-trip (write, then onSnapshot echoing it
-  // back into `tasks`) would then overwrite the smooth locally-computed
-  // display with that stale/late value, producing the visible
-  // "freeze then jump" stutter. `liveTasks` below always recomputes the
-  // running task's displayed value from `startedAt` rather than trusting
-  // whatever `elapsed` last came back from Firestore, so the round trip can
-  // never visibly move the number backwards or skip it forwards.
+  // 1s re-render tick + periodic flush. Flushing banks the live elapsed
+  // value into Firestore AND re-stamps this task's local runStartedAt/banked
+  // to the same instant, so the next tick starts measuring a fresh run
+  // instead of re-adding time that's already been counted.
   useEffect(() => {
     if (!uid) return;
-    let msSinceFlush = 0;
     const id = setInterval(() => {
       forceTick((n) => n + 1);
-      msSinceFlush += 1000;
-      if (msSinceFlush >= 5000) {
-        msSinceFlush = 0;
-        tasksRef.current.forEach((t) => {
-          if (t.running && t.startedAt) {
-            updateTask(uid, t.id, { elapsed: Math.floor(liveElapsed(t)) });
-          }
-        });
-      }
+      const now = Date.now();
+      Object.keys(runStateRef.current).forEach((taskId) => {
+        const rs = runStateRef.current[taskId];
+        if (!rs || now - rs.flushedAt < FLUSH_MS) return;
+        const banked = Math.floor(rs.banked + Math.max(0, (now - rs.runStartedAt) / 1000));
+        runStateRef.current[taskId] = { banked, runStartedAt: now, flushedAt: now };
+        updateTask(uid, taskId, { elapsed: banked, startedAt: now });
+      });
     }, 1000);
     return () => clearInterval(id);
   }, [uid]);
@@ -94,10 +110,13 @@ export function useTasks(uid) {
   useEffect(() => {
     if (!uid) return;
     const flushRunning = () => {
-      tasksRef.current.forEach((t) => {
-        if (t.running && t.startedAt) {
-          updateTask(uid, t.id, { elapsed: Math.floor(liveElapsed(t)) });
-        }
+      const now = Date.now();
+      Object.keys(runStateRef.current).forEach((taskId) => {
+        const rs = runStateRef.current[taskId];
+        if (!rs) return;
+        const banked = Math.floor(rs.banked + Math.max(0, (now - rs.runStartedAt) / 1000));
+        runStateRef.current[taskId] = { banked, runStartedAt: now, flushedAt: now };
+        updateTask(uid, taskId, { elapsed: banked, startedAt: now });
       });
     };
     const onVisibility = () => {
@@ -114,9 +133,10 @@ export function useTasks(uid) {
     };
   }, [uid]);
 
-  // Expose tasks with their elapsed field live-computed from startedAt, so
-  // every consumer (Tasks.jsx, Dashboard, etc.) just reads `task.elapsed`
-  // as always and gets the real, up-to-the-second value for free.
+  // Expose tasks with their elapsed field live-computed from local run
+  // state, so every consumer (Tasks.jsx, Dashboard, etc.) just reads
+  // `task.elapsed` as always and gets the real, up-to-the-second value —
+  // without ever double-counting a run that's already been banked.
   const liveTasks = tasks.map((t) => (t.running ? { ...t, elapsed: liveElapsed(t) } : t));
 
   return liveTasks;
