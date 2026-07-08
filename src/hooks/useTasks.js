@@ -27,22 +27,12 @@
 // after the screen comes back on, it recomputes the correct total from the
 // timestamp difference, so no time is ever lost.
 //
-// TASK TIME -> "Time today":
-// Whatever a task actually ran *today* also needs to count toward the
-// Dashboard's "Time today" (alongside the Study Stopwatch). A task's own
-// `elapsed` field is a lifetime total across however many days it's been
-// worked on, so we can't just add all of it in — only the portion that ran
-// today should count. We track that with a per-session cursor
-// (sessionFlushedRef, one entry per task id): each time we flush, we send
-// Firestore only the *delta* since the last flush for that run, via
-// addTaskSeconds's atomic increment. A fresh run (new startedAt) resets
-// that task's cursor to 0, and pausing/completing sends one final delta
-// covering right up to the moment it stopped. If the day rolls over while
-// a task is still running, its cursor also resets so the new day starts
-// counting today's task time from zero.
+// NOTE: a task's own elapsed time is tracked entirely independently of the
+// Study Stopwatch / "Time today" on the Dashboard — running a task timer
+// does NOT add to "Time today". These are two intentionally separate
+// numbers.
 import { useEffect, useRef, useState } from "react";
-import { watchTasks, updateTask, addTaskSeconds } from "../lib/firestore";
-import { dayKeyFor } from "../lib/time";
+import { watchTasks, updateTask } from "../lib/firestore";
 
 // Real elapsed seconds for a task right now, whether it's running or not.
 function liveElapsed(t) {
@@ -57,12 +47,6 @@ export function useTasks(uid) {
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
-  // For each currently-running task id: how many of its *today* seconds
-  // have already been flushed into studyDays.taskSeconds, keyed by that
-  // run's startedAt (so a fresh start/resume always begins a new count).
-  const flushedRef = useRef({}); // { [taskId]: { startedAt, sentSeconds } }
-  const dayKeyRef = useRef(dayKeyFor(new Date()));
-
   // live sync from Firestore — updates instantly across tabs/devices
   useEffect(() => {
     if (!uid) {
@@ -72,58 +56,23 @@ export function useTasks(uid) {
     return watchTasks(uid, setTasks);
   }, [uid]);
 
-  // Sends the delta of *this run's* elapsed time (since the run's own
-  // startedAt, capped to what's happened since the last flush) to today's
-  // studyDay.taskSeconds, and advances the cursor. No-ops for tasks that
-  // aren't running or whose run started before today (nothing "today" to
-  // credit until the day rolls over naturally via dayKeyRef).
-  const flushTaskToToday = (t, todayKey) => {
-    if (!t.running || !t.startedAt) return;
-    const cursor = flushedRef.current[t.id];
-    const freshRun = !cursor || cursor.startedAt !== t.startedAt;
-    if (freshRun) {
-      flushedRef.current[t.id] = { startedAt: t.startedAt, sentSeconds: 0 };
-    }
-    const startedAtKey = dayKeyFor(new Date(t.startedAt));
-    // Only count time from the point "today" began: if the run started
-    // before today (carried over from before midnight), credit only the
-    // portion since local midnight, not the whole run.
-    const runStart = startedAtKey === todayKey ? t.startedAt : new Date(new Date().setHours(0, 0, 0, 0)).getTime();
-    const totalTodaySoFar = Math.max(0, (Date.now() - runStart) / 1000);
-    const c = flushedRef.current[t.id];
-    const delta = Math.floor(totalTodaySoFar) - Math.floor(c.sentSeconds);
-    if (delta > 0) {
-      c.sentSeconds += delta;
-      addTaskSeconds(uid, todayKey, delta);
-    }
-  };
-
-  // Re-render every second so running tasks visibly count up, flush the
-  // recomputed real elapsed time onto the task doc every ~5s, and flush
-  // today's share of running-task time into studyDays.taskSeconds.
+  // Re-render every second so running tasks visibly count up, and flush the
+  // recomputed real elapsed time onto the task doc every ~5s so it survives
+  // a refresh/crash without losing more than a few seconds of progress.
   useEffect(() => {
     if (!uid) return;
     const id = setInterval(() => {
       forceTick((n) => n + 1);
-      const todayKey = dayKeyFor(new Date());
-      if (todayKey !== dayKeyRef.current) {
-        // Midnight rolled over while task(s) were running: reset cursors so
-        // the new day starts counting from zero for still-running tasks.
-        dayKeyRef.current = todayKey;
-        flushedRef.current = {};
-      }
       tasksRef.current.forEach((t) => {
         if (t.running && t.startedAt) {
           const next = Math.floor(liveElapsed(t));
           if (next !== t.elapsed && next % 5 === 0) {
             updateTask(uid, t.id, { elapsed: next });
           }
-          flushTaskToToday(t, dayKeyRef.current);
         }
       });
     }, 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
   // Also flush immediately when the app is about to go to the background or
@@ -134,11 +83,9 @@ export function useTasks(uid) {
   useEffect(() => {
     if (!uid) return;
     const flushRunning = () => {
-      const todayKey = dayKeyFor(new Date());
       tasksRef.current.forEach((t) => {
         if (t.running && t.startedAt) {
           updateTask(uid, t.id, { elapsed: Math.floor(liveElapsed(t)) });
-          flushTaskToToday(t, todayKey);
         }
       });
     };
@@ -154,7 +101,6 @@ export function useTasks(uid) {
       window.removeEventListener("beforeunload", flushRunning);
       window.removeEventListener("pagehide", flushRunning);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
   // Expose tasks with their elapsed field live-computed from startedAt, so
@@ -162,13 +108,5 @@ export function useTasks(uid) {
   // as always and gets the real, up-to-the-second value for free.
   const liveTasks = tasks.map((t) => (t.running ? { ...t, elapsed: liveElapsed(t) } : t));
 
-  // Callers (Tasks.jsx) call this right when they pause/complete a task,
-  // so the exact final second is credited to today immediately instead of
-  // waiting for the next 1s interval tick.
-  const flushTaskNow = (taskId) => {
-    const t = tasksRef.current.find((x) => x.id === taskId);
-    if (t) flushTaskToToday(t, dayKeyFor(new Date()));
-  };
-
-  return { tasks: liveTasks, flushTaskNow };
+  return liveTasks;
 }

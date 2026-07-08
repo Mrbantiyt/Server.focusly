@@ -47,7 +47,7 @@ export function useGameStats(uid, running) {
     return () => clearInterval(id);
   }, [uid, running]);
 
-  const { level, xpIntoLevel, xpForNextLevel } = levelFromXp(stats.xp);
+  const { level, xpIntoLevel, xpForNextLevel, totalXp, totalXpForNextLevel } = levelFromXp(stats.xp);
 
   return {
     xp: stats.xp,
@@ -59,5 +59,7 @@ export function useGameStats(uid, running) {
     level,
     xpIntoLevel,
     xpForNextLevel,
+    totalXp,
+    totalXpForNextLevel,
   };
 }

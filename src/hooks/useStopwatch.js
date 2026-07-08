@@ -11,22 +11,17 @@ const FLUSH_MS = 8000;
 // ---------------------------------------------------------------------------
 // MODEL
 // ---------------------------------------------------------------------------
-// "Time today" is the sum of TWO independent sources, both stored on the
-// same users/{uid}/studyDays/{dayKey} doc:
-//   seconds      — from this Study Stopwatch
-//   taskSeconds  — from running task timers on the Tasks tab (added there
-//                  via addTaskSeconds as those timers run; see useTasks.js)
-// This hook owns `seconds` and just adds in `taskSeconds` (read-only, from
-// the same Firestore doc) to produce the number shown as "Time today".
+// "Time today" comes ONLY from this Study Stopwatch. Task timers on the
+// Tasks tab run and track their own elapsed time independently, and do NOT
+// add to "Time today" — they're separate by design.
 //
-// bankedRef.current is the last-known-good STOPWATCH total (never moves
-// backward). While running, the true current stopwatch total is always
-// computed fresh as bankedRef.current + secondsSinceRunStarted() from a
-// wall-clock timestamp (runStartedAtRef) — never accumulated tick by tick —
-// so throttled/suspended intervals (screen off, backgrounded tab) never
-// lose time.
+// bankedRef.current is the last-known-good total (never moves backward).
+// While running, the true current total is always computed fresh as
+// bankedRef.current + secondsSinceRunStarted() from a wall-clock timestamp
+// (runStartedAtRef) — never accumulated tick by tick — so throttled/
+// suspended intervals (screen off, backgrounded tab) never lose time.
 //
-//   todaySeconds (Time today)  = liveStopwatch() + taskSecondsRef.current
+//   todaySeconds (Time today)  = liveStopwatch()
 //   displaySeconds (face)      = liveStopwatch() - sessionBaseRef.current
 // sessionBaseRef is a snapshot of bankedRef taken when Reset is pressed —
 // it never moves bankedRef itself, so "Time today" can never go backward
@@ -42,7 +37,6 @@ export function useStopwatch(uid) {
   const [, forceTick] = useState(0);
 
   const bankedRef = useRef(0);          // last-known-good stopwatch total (never moves backward)
-  const taskSecondsRef = useRef(0);     // last-known task-timer total for today, from Firestore
   const sessionBaseRef = useRef(0);     // bankedRef snapshot at last face-reset
   const runStartedAtRef = useRef(null); // Date.now() when the current run began, or null if paused
   const runningRef = useRef(false);     // mirrors `running`, readable from effects/closures without re-subscribing
@@ -57,29 +51,20 @@ export function useStopwatch(uid) {
     return bankedRef.current + ranSec;
   };
 
-  // Accepts { seconds, taskSeconds } learned from Firestore (initial load or
-  // live sync). Stopwatch `seconds` only ever moves bankedRef FORWARD (and
-  // re-stamps the run start so a run in progress doesn't double-count).
-  // `taskSeconds` is just mirrored as-is — it's owned by useTasks.js, not us.
-  const applyRemote = ({ seconds, taskSeconds }) => {
-    let changed = false;
-    if (seconds > bankedRef.current) {
-      bankedRef.current = seconds;
-      if (runningRef.current) runStartedAtRef.current = Date.now();
-      changed = true;
-    }
-    if (taskSeconds !== taskSecondsRef.current) {
-      taskSecondsRef.current = taskSeconds;
-      changed = true;
-    }
-    if (changed) forceTick((n) => n + 1);
+  // Accepts { seconds } learned from Firestore (initial load or live sync).
+  // Only ever moves bankedRef FORWARD (and re-stamps the run start so a
+  // run in progress doesn't double-count).
+  const applyRemote = ({ seconds }) => {
+    if (seconds <= bankedRef.current) return;
+    bankedRef.current = seconds;
+    if (runningRef.current) runStartedAtRef.current = Date.now();
+    forceTick((n) => n + 1);
   };
 
   // load today's value once, then keep listening for cross-device changes
   useEffect(() => {
     if (!uid) return;
     bankedRef.current = 0;
-    taskSecondsRef.current = 0;
     sessionBaseRef.current = 0;
     runStartedAtRef.current = runningRef.current ? Date.now() : null;
 
@@ -100,7 +85,6 @@ export function useStopwatch(uid) {
       if (key !== dayKey) {
         if (uid) setStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
         bankedRef.current = 0;
-        taskSecondsRef.current = 0;
         sessionBaseRef.current = 0;
         runStartedAtRef.current = runningRef.current ? Date.now() : null;
         setDayKey(key);
@@ -171,7 +155,7 @@ export function useStopwatch(uid) {
 
   const liveSw = liveStopwatch();
   const displaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
-  const todaySeconds = liveSw + taskSecondsRef.current;
+  const todaySeconds = liveSw;
 
   return { seconds: displaySeconds, todaySeconds, running, toggle, reset, dayKey };
 }
