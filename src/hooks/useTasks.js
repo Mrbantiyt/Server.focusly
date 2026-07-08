@@ -56,21 +56,32 @@ export function useTasks(uid) {
     return watchTasks(uid, setTasks);
   }, [uid]);
 
-  // Re-render every second so running tasks visibly count up, and flush the
-  // recomputed real elapsed time onto the task doc every ~5s so it survives
-  // a refresh/crash without losing more than a few seconds of progress.
+  // Re-render every second so running tasks visibly count up. Flushing to
+  // Firestore now runs on its own counter instead of checking
+  // `next % 5 === 0` — that check depended on a tick landing on an exact
+  // multiple of 5, but wall-clock-driven ticks drift and skip values, so it
+  // could go many seconds without writing, then write a much larger number
+  // all at once. The Firestore round-trip (write, then onSnapshot echoing it
+  // back into `tasks`) would then overwrite the smooth locally-computed
+  // display with that stale/late value, producing the visible
+  // "freeze then jump" stutter. `liveTasks` below always recomputes the
+  // running task's displayed value from `startedAt` rather than trusting
+  // whatever `elapsed` last came back from Firestore, so the round trip can
+  // never visibly move the number backwards or skip it forwards.
   useEffect(() => {
     if (!uid) return;
+    let msSinceFlush = 0;
     const id = setInterval(() => {
       forceTick((n) => n + 1);
-      tasksRef.current.forEach((t) => {
-        if (t.running && t.startedAt) {
-          const next = Math.floor(liveElapsed(t));
-          if (next !== t.elapsed && next % 5 === 0) {
-            updateTask(uid, t.id, { elapsed: next });
+      msSinceFlush += 1000;
+      if (msSinceFlush >= 5000) {
+        msSinceFlush = 0;
+        tasksRef.current.forEach((t) => {
+          if (t.running && t.startedAt) {
+            updateTask(uid, t.id, { elapsed: Math.floor(liveElapsed(t)) });
           }
-        }
-      });
+        });
+      }
     }, 1000);
     return () => clearInterval(id);
   }, [uid]);
