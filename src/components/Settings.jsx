@@ -354,8 +354,14 @@ function ChangePasswordPanel({ user, onBack }) {
         <input type="password" placeholder="New password" value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password"
           className="w-full px-3 py-2.5 font-body text-sm rounded-xl outline-none" style={{ background: COL.input, color: COL.ink }} />
-        <button type="submit" disabled={passwordBusy} style={neu(false, 12)}
-          className="py-2.5 font-body font-medium text-sm active:scale-[0.98] transition disabled:opacity-60">
+        <button type="submit" disabled={passwordBusy}
+          style={{
+            borderRadius: 12,
+            background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+            boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+            color: "#FFFFFF",
+          }}
+          className="py-2.5 font-body font-semibold text-sm active:scale-[0.98] transition disabled:opacity-60">
           {passwordBusy ? "Updating…" : "Update password"}
         </button>
         {passwordError && <div className="font-body text-[11px]" style={{ color: COL.coral }}>{passwordError}</div>}
