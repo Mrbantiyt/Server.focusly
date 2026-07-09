@@ -20,11 +20,13 @@ const WELCOME_MSG = { role: "assistant", content: "Hey! I'm Focusly AI. Ask me a
 export default function Chat({ user }) {
   const [messages, setMessages] = useState([WELCOME_MSG]);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [input, setInput] = useState("");
   const [pendingImage, setPendingImage] = useState(null); // { dataUrl, previewUrl }
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
 
@@ -38,6 +40,11 @@ export default function Chat({ user }) {
         if (!cancelled && saved && saved.length > 0) setMessages(saved);
       } catch (err) {
         console.error("Failed to load saved chat:", err);
+        // Loading failed (network/permissions/etc). Do NOT mark as loaded —
+        // that would let the save-effect below fire with just the welcome
+        // message and overwrite whatever is actually stored in Firestore.
+        if (!cancelled) setLoadFailed(true);
+        return;
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -48,21 +55,22 @@ export default function Chat({ user }) {
   // Persist on every change, once the initial load has finished (so we
   // never overwrite a saved chat with the placeholder welcome message).
   useEffect(() => {
-    if (!user?.uid || !loaded) return;
+    if (!user?.uid || !loaded || loadFailed) return;
     saveAiChat(user.uid, messages).catch((err) => console.error("Failed to save chat:", err));
-  }, [messages, loaded, user?.uid]);
+  }, [messages, loaded, loadFailed, user?.uid]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
   const handleClearChat = async () => {
-    if (!confirmClear) { setConfirmClear(true); return; }
-    setConfirmClear(false);
+    setDeleting(true);
     setMessages([WELCOME_MSG]);
     if (user?.uid) {
       try { await clearAiChat(user.uid); } catch (err) { console.error("Failed to clear chat:", err); }
     }
+    setDeleting(false);
+    setShowDeleteModal(false);
   };
 
   const handlePickImage = () => fileInputRef.current?.click();
@@ -132,21 +140,57 @@ export default function Chat({ user }) {
 
         {messages.length > 1 && (
           <button
-            onClick={handleClearChat}
-            onBlur={() => setConfirmClear(false)}
+            onClick={() => setShowDeleteModal(true)}
             style={neu(false, 12)}
             className="flex items-center gap-1.5 px-2.5 h-8 flex-shrink-0 active:scale-[0.95] transition"
-            aria-label="Delete all chat"
+            aria-label="Delete all chats"
           >
-            <Trash2 size={14} color={confirmClear ? COL.coral : COL.sub} />
-            {confirmClear && (
-              <span className="font-body text-xs font-semibold" style={{ color: COL.coral }}>
-                Tap to confirm
-              </span>
-            )}
+            <Trash2 size={14} color={COL.sub} />
+            <span className="font-body text-xs font-semibold" style={{ color: COL.sub }}>
+              Delete all
+            </span>
           </button>
         )}
       </div>
+
+      {showDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={() => !deleting && setShowDeleteModal(false)}
+        >
+          <div
+            style={{ ...neu(false, 20), background: COL.card }}
+            className="w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="font-display font-semibold text-base mb-1.5" style={{ color: COL.ink }}>
+              Delete all chats?
+            </div>
+            <div className="font-body text-sm mb-4" style={{ color: COL.sub }}>
+              This will permanently delete your entire conversation with Focusly AI. This can't be undone.
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                style={neu(false, 14)}
+                className="flex-1 font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearChat}
+                disabled={deleting}
+                style={{ ...neu(false, 14), background: COL.coral }}
+                className="flex-1 font-body text-sm font-semibold py-2.5 text-white active:scale-[0.97] transition disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete all"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col gap-3 py-2 pr-1">
         {messages.map((m, i) => (
@@ -178,18 +222,22 @@ export default function Chat({ user }) {
 
         {sending && (
           <div className="flex justify-start">
-            <div style={neu(false, 16)} className="px-4 py-3 flex items-center gap-1.5">
-              <span className="fai-dot" style={{ background: COL.violet, animationDelay: "0ms" }} />
-              <span className="fai-dot" style={{ background: COL.violet, animationDelay: "160ms" }} />
-              <span className="fai-dot" style={{ background: COL.violet, animationDelay: "320ms" }} />
+            <div style={neu(false, 16)} className="px-4 py-3 flex items-center gap-2">
+              <Sparkles size={14} color={COL.violet} className="fai-sparkle" />
+              <span className="font-body text-sm" style={{ color: COL.sub }}>Thinking</span>
+              <span className="flex items-center gap-1">
+                <span className="fai-dot" style={{ background: COL.violet, animationDelay: "0ms" }} />
+                <span className="fai-dot" style={{ background: COL.violet, animationDelay: "160ms" }} />
+                <span className="fai-dot" style={{ background: COL.violet, animationDelay: "320ms" }} />
+              </span>
             </div>
           </div>
         )}
       </div>
 
-      {error && (
+      {(error || loadFailed) && (
         <div className="font-body text-xs px-1 pb-1" style={{ color: COL.coral }}>
-          {error}
+          {error || "Couldn't load your saved chat — check your connection. Your previous messages are safe and will reappear once reloaded."}
         </div>
       )}
 
@@ -267,6 +315,13 @@ export default function Chat({ user }) {
         @keyframes fai-bounce {
           0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
           30% { transform: translateY(-5px); opacity: 1; }
+        }
+        .fai-sparkle {
+          animation: fai-pulse 1200ms ease-in-out infinite;
+        }
+        @keyframes fai-pulse {
+          0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.6; }
+          50% { transform: scale(1.2) rotate(15deg); opacity: 1; }
         }
       `}</style>
     </div>
