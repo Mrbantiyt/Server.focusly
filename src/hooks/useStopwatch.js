@@ -41,31 +41,8 @@ export function useStopwatch(uid) {
   const runStartedAtRef = useRef(null); // Date.now() when the current run began, or null if paused
   const runningRef = useRef(false);     // mirrors `running`, readable from effects/closures without re-subscribing
   const flushedAtRef = useRef(0);
-  // Highest value we ourselves have written to Firestore this session.
-  // Any inbound snapshot smaller than this is guaranteed to be a stale
-  // echo of an earlier in-flight write landing out of order, not real
-  // new information, and must never overwrite a more recent local write
-  // (this is what caused "Time today" to snap backward right after pausing).
-  const lastLocalWriteRef = useRef(0);
-  // Highest value the FACE has ever shown this session. A pure UI floor:
-  // even if some edge case slipped a smaller bankedRef past every other
-  // guard, the number on screen must never visibly drop — pausing at
-  // 8:30 must keep showing 8:30, never snap back to an earlier moment.
-  const displayFloorRef = useRef(0);
-  // Same idea as displayFloorRef, but for "Time today" — it must never
-  // visibly drop either. Unlike the face, this one has no Reset case that
-  // should legitimately lower it; it only ever holds or climbs, all the
-  // way until the actual midnight rollover starts a new day.
-  const todayFloorRef = useRef(0);
 
   useEffect(() => { runningRef.current = running; }, [running]);
-
-  // All local writes MUST go through this so lastLocalWriteRef always
-  // reflects the freshest value we've sent, regardless of network timing.
-  const writeStudyDay = (writeUid, writeDayKey, value) => {
-    lastLocalWriteRef.current = Math.max(lastLocalWriteRef.current, value);
-    setStudyDay(writeUid, writeDayKey, value);
-  };
 
   // True elapsed stopwatch seconds right now, live-including the current run.
   const liveStopwatch = () => {
@@ -75,30 +52,10 @@ export function useStopwatch(uid) {
   };
 
   // Accepts { seconds } learned from Firestore (initial load or live sync).
-  // Only ever moves bankedRef FORWARD, and only based on what the live
-  // total already reflects — never based on the stale bankedRef snapshot.
-  //
-  // Why this matters: while running, periodic flushes write the live total
-  // to Firestore but deliberately don't touch bankedRef/runStartedAtRef
-  // (the run is still in progress). When that write's own echo comes back
-  // through the onSnapshot listener some time later (network round-trip),
-  // comparing the incoming value only against the old bankedRef made it
-  // look "newer" than what was banked, even though real (wall-clock) time
-  // had since moved on further. That overwrote bankedRef with a
-  // slightly-stale number AND re-stamped runStartedAtRef to "now" —
-  // silently dropping every second between when the flush was sent and
-  // when its echo arrived. Comparing against liveStopwatch() (which
-  // already accounts for elapsed run time) instead of bankedRef.current
-  // makes a same-session echo a guaranteed no-op, so no time is lost.
+  // Only ever moves bankedRef FORWARD (and re-stamps the run start so a
+  // run in progress doesn't double-count).
   const applyRemote = ({ seconds }) => {
-    // Guard against a stale echo of an EARLIER local write landing after a
-    // LATER local write already banked a smaller number (e.g. a periodic
-    // flush's echo arriving after a pause-write). lastLocalWriteRef always
-    // reflects the most recent value we ourselves sent, so any inbound
-    // value below it is old news and must be ignored — liveStopwatch()
-    // alone won't catch this once we're paused, since it just returns
-    // bankedRef at that point.
-    if (seconds <= liveStopwatch() || seconds < lastLocalWriteRef.current) return;
+    if (seconds <= bankedRef.current) return;
     bankedRef.current = seconds;
     if (runningRef.current) runStartedAtRef.current = Date.now();
     forceTick((n) => n + 1);
@@ -110,12 +67,15 @@ export function useStopwatch(uid) {
     bankedRef.current = 0;
     sessionBaseRef.current = 0;
     runStartedAtRef.current = runningRef.current ? Date.now() : null;
-    displayFloorRef.current = 0;
-    todayFloorRef.current = 0;
 
     let cancelled = false;
-    getStudyDay(uid, dayKey).then((d) => { if (!cancelled) applyRemote(d); });
-    const unsub = watchStudyDay(uid, dayKey, applyRemote);
+    // Guard the live subscription the same way the one-time getStudyDay()
+    // read already is: if this effect instance gets torn down (e.g. React
+    // StrictMode's mount -> cleanup -> mount cycle), a snapshot already in
+    // flight from the old listener must be ignored instead of applied.
+    const guardedApplyRemote = (d) => { if (!cancelled) applyRemote(d); };
+    getStudyDay(uid, dayKey).then((d) => guardedApplyRemote(d));
+    const unsub = watchStudyDay(uid, dayKey, guardedApplyRemote);
 
     return () => { cancelled = true; unsub(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,13 +88,10 @@ export function useStopwatch(uid) {
     const id = setInterval(() => {
       const key = dayKeyFor(new Date());
       if (key !== dayKey) {
-        if (uid) writeStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
+        if (uid) setStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
         bankedRef.current = 0;
         sessionBaseRef.current = 0;
         runStartedAtRef.current = runningRef.current ? Date.now() : null;
-        lastLocalWriteRef.current = 0; // new day, new document — old watermark no longer applies
-        displayFloorRef.current = 0;
-        todayFloorRef.current = 0;
         setDayKey(key);
         return;
       }
@@ -149,7 +106,7 @@ export function useStopwatch(uid) {
     const id = setInterval(() => {
       if (runningRef.current && Date.now() - flushedAtRef.current > FLUSH_MS) {
         flushedAtRef.current = Date.now();
-        writeStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
+        setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
       }
     }, 1000);
     return () => clearInterval(id);
@@ -167,7 +124,7 @@ export function useStopwatch(uid) {
         const banked = Math.floor(liveStopwatch());
         bankedRef.current = banked;
         runStartedAtRef.current = null;
-        if (uid) writeStudyDay(uid, dayKey, banked);
+        if (uid) setStudyDay(uid, dayKey, banked);
       }
       return next;
     });
@@ -180,7 +137,7 @@ export function useStopwatch(uid) {
   useEffect(() => {
     if (!uid) return;
     const flushNow = () => {
-      if (runningRef.current) writeStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
+      if (runningRef.current) setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
     };
     const onVisibility = () => {
       forceTick((n) => n + 1);
@@ -199,21 +156,11 @@ export function useStopwatch(uid) {
   // Zeroes only the stopwatch FACE (via a snapshot of the current banked
   // stopwatch total). "Time today" is untouched and keeps counting in the
   // background — it only resets automatically at midnight.
-  const reset = () => {
-    sessionBaseRef.current = liveStopwatch();
-    displayFloorRef.current = 0; // the one intentional case where the face should drop
-    forceTick((n) => n + 1);
-  };
+  const reset = () => { sessionBaseRef.current = liveStopwatch(); forceTick((n) => n + 1); };
 
   const liveSw = liveStopwatch();
-  const rawDisplaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
-  // Never let the visible face drop below the highest value it already
-  // showed (except right after Reset, handled above).
-  displayFloorRef.current = Math.max(displayFloorRef.current, rawDisplaySeconds);
-  const displaySeconds = displayFloorRef.current;
-  // Same protection for "Time today" — it only ever holds or climbs.
-  todayFloorRef.current = Math.max(todayFloorRef.current, liveSw);
-  const todaySeconds = todayFloorRef.current;
+  const displaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
+  const todaySeconds = liveSw;
 
   return { seconds: displaySeconds, todaySeconds, running, toggle, reset, dayKey };
 }
