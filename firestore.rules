@@ -12,22 +12,26 @@ service cloud.firestore {
       }
     }
 
-    // usernames/{usernameLower} = { uid, email }
-    // Must be publicly readable: logging in with a username (instead of an
-    // email) looks up this doc BEFORE the user is authenticated, to find
-    // the email to pass to Firebase Auth. Email is duplicated here (not
-    // just on users/{uid}) for the same reason — users/{uid} isn't
-    // readable pre-auth. Writes are still locked down — only the user who
-    // owns that uid can claim/release a username.
+    // usernames/{usernameLower} = { uid }
+    // Publicly readable so the client can check username availability
+    // (isUsernameAvailable) before signup. Deliberately does NOT store
+    // email anymore — it used to, so that username-login could resolve an
+    // email before the user was authenticated, but since this doc must be
+    // public, that leaked every registered user's email to anyone who
+    // could guess/enumerate a username. That lookup now goes through
+    // api/resolve-username.js (server-side, Admin SDK) instead, which
+    // reads email from the private users/{uid} doc. Writes are still
+    // locked down — only the user who owns that uid can claim/release a
+    // username, and the doc may never contain anything but uid.
     match /usernames/{usernameLower} {
       allow read: if true;
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(["uid", "email"]);
+        && request.resource.data.keys().hasOnly(["uid"]);
       allow update: if request.auth != null
         && resource.data.uid == request.auth.uid
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(["uid", "email"]);
+        && request.resource.data.keys().hasOnly(["uid"]);
       allow delete: if request.auth != null
         && resource.data.uid == request.auth.uid;
     }
