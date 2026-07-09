@@ -3,7 +3,7 @@
 // Redesigned as a menu list (matching the reference screenshots) instead of
 // one long scrolling page. Tapping a row opens that section as a full-panel
 // overlay with a back button, then returns to the same menu.
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks, Target,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
@@ -12,7 +12,6 @@ import {
 import { COL, neu } from "../theme";
 import { fmtHrs, fmtCompact } from "../lib/time";
 import { updateUserProfile, claimUsername, setActiveMascot } from "../lib/firestore";
-import { uploadProfilePhoto } from "../lib/media";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
 
@@ -49,11 +48,11 @@ function PanelHeader({ title, onBack }) {
 
 /* ------------------------------ Account Settings ------------------------------ */
 
-function AccountSettingsPanel({ user, onBack }) {
+function AccountSettingsPanel({ user, ownedItems, onBack }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(user.displayName || "Student");
-  const [uploadingDp, setUploadingDp] = useState(false);
-  const dpInputRef = useRef(null);
+  const [savingDp, setSavingDp] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [editingUsername, setEditingUsername] = useState(false);
   const [usernameInput, setUsernameInput] = useState(user.username || "");
@@ -75,18 +74,22 @@ function AccountSettingsPanel({ user, onBack }) {
     }
   };
 
-  const pickDp = () => dpInputRef.current?.click();
+  // DP is now chosen from the same mascot collection used for the app icon
+  // (Customize panel) instead of an arbitrary photo from the gallery — this
+  // keeps every profile picture a known, safe, pre-approved image rather
+  // than user-uploaded content.
+  const owned = ownedItems || [];
+  const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
 
-  const onDpChosen = async (file) => {
-    if (!file) return;
-    setUploadingDp(true);
+  const choosePhoto = async (item) => {
+    setSavingDp(true);
     try {
-      const photoURL = await uploadProfilePhoto(file);
-      await updateUserProfile(user.uid, { photoURL });
+      await updateUserProfile(user.uid, { photoURL: item.img });
+      setPickerOpen(false);
     } catch (e) {
       alert("Couldn't update profile picture: " + e.message);
     } finally {
-      setUploadingDp(false);
+      setSavingDp(false);
     }
   };
 
@@ -107,14 +110,42 @@ function AccountSettingsPanel({ user, onBack }) {
             <div className="w-16 h-16 rounded-3xl flex items-center justify-center font-display font-bold text-2xl text-white"
               style={{ background: `linear-gradient(135deg, ${COL.blue}, ${COL.violet})` }}>{(name[0] || "S").toUpperCase()}</div>
           )}
-          <input ref={dpInputRef} type="file" accept="image/*" className="hidden"
-            onChange={(e) => onDpChosen(e.target.files?.[0])} />
-          <button onClick={pickDp} disabled={uploadingDp}
+          <button onClick={() => setPickerOpen(true)} disabled={savingDp}
             className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center border-2"
             style={{ background: COL.violet, borderColor: COL.card }}>
-            {uploadingDp ? <Loader2 size={12} color="#fff" className="animate-spin" /> : <Camera size={12} color="#fff" />}
+            {savingDp ? <Loader2 size={12} color="#fff" className="animate-spin" /> : <Camera size={12} color="#fff" />}
           </button>
         </div>
+
+        {pickerOpen && (
+          <div style={neu(true, 18)} className="w-full p-4 flex flex-col gap-3">
+            <div className="font-body text-xs" style={{ color: COL.sub }}>
+              Choose a profile picture from your unlocked collection.
+            </div>
+            {collection.length === 0 ? (
+              <div className="font-body text-xs text-center py-3" style={{ color: COL.sub }}>
+                You haven't unlocked any icons yet — buy a theme in the Store to use it as your DP.
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-3">
+                {collection.map((item) => (
+                  <button key={item.id} onClick={() => choosePhoto(item)} disabled={savingDp}
+                    className="rounded-2xl overflow-hidden active:scale-95 transition"
+                    style={{
+                      boxShadow: user.photoURL === item.img
+                        ? `0 0 0 2px ${COL.violet}`
+                        : "none",
+                    }}>
+                    <img src={item.img} alt={item.name} className="w-full aspect-square object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setPickerOpen(false)} className="font-body text-xs" style={{ color: COL.sub }}>
+              Cancel
+            </button>
+          </div>
+        )}
 
         {editing ? (
           <div className="flex items-center gap-2">
@@ -300,10 +331,20 @@ function StatTile({ icon: Icon, accent, label, value, note }) {
   );
 }
 
-function YourDataPanel({ tasks, todaySeconds, totalStudySeconds, coins, streak, level, onBack }) {
-  const tasksDone = tasks.filter((t) => t.done).length;
-  const goalsTotal = tasks.reduce((n, t) => n + (t.goals?.length || 0), 0);
-  const goalsDone = tasks.reduce((n, t) => n + (t.goals?.filter((g) => g.done).length || 0), 0);
+function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coins, streak, level, onBack }) {
+  // `tasks` only ever contains TODAY's tasks now (they're wiped at
+  // midnight — see runMidnightTaskReset in lib/firestore.js), so these two
+  // are "today" numbers...
+  const todayTasksDone = tasks.filter((t) => t.done).length;
+  const todayGoalsTotal = tasks.reduce((n, t) => n + (t.goals?.length || 0), 0);
+  const todayGoalsDone = tasks.reduce((n, t) => n + (t.goals?.filter((g) => g.done).length || 0), 0);
+
+  // ...while these come from the lifetime counters that survive the daily
+  // wipe, so "Total tasks" keeps growing across every day the app's been used.
+  const stats = taskStats || { totalCreated: 0, totalCompleted: 0, totalGoalsCompleted: 0 };
+  const totalTasksCreated = stats.totalCreated + tasks.length; // + today's not-yet-wiped tasks
+  const totalTasksCompleted = stats.totalCompleted + todayTasksDone;
+  const totalGoalsCompleted = stats.totalGoalsCompleted + todayGoalsDone;
 
   return (
     <div className="flex flex-col gap-5">
@@ -311,8 +352,9 @@ function YourDataPanel({ tasks, todaySeconds, totalStudySeconds, coins, streak, 
       <div className="grid grid-cols-2 gap-3">
         <StatTile icon={Clock} accent={COL.blue} label="Today time" value={fmtHrs(todaySeconds)} />
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
-        <StatTile icon={ListChecks} accent={COL.mint} label="Tasks completed" value={`${tasksDone}/${tasks.length}`} />
-        <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${goalsDone}/${goalsTotal}`} />
+        <StatTile icon={ListChecks} accent={COL.mint} label="Today's tasks" value={`${todayTasksDone}/${tasks.length}`} note="Resets at midnight" />
+        <StatTile icon={ListChecks} accent={COL.blue} label="Total tasks" value={`${totalTasksCompleted}/${totalTasksCreated}`} note="All-time, never resets" />
+        <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${totalGoalsCompleted}`} note="All-time" />
         <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
         <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
         <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
@@ -420,10 +462,10 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, todaySeconds, totalStudySeconds, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
   const [section, setSection] = useState(null); // null = main menu
 
-  if (section === "account") return <AccountSettingsPanel user={user} onBack={() => setSection(null)} />;
+  if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
   if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} onBack={() => setSection(null)} />;
   if (section === "notifications") {
     return (
@@ -436,7 +478,7 @@ export default function Settings({ user, tasks, todaySeconds, totalStudySeconds,
   if (section === "data") {
     return (
       <YourDataPanel
-        tasks={tasks} todaySeconds={todaySeconds} totalStudySeconds={totalStudySeconds}
+        tasks={tasks} taskStats={taskStats} todaySeconds={todaySeconds} totalStudySeconds={totalStudySeconds}
         coins={coins} streak={streak} level={level} onBack={() => setSection(null)}
       />
     );

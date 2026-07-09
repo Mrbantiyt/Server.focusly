@@ -4,7 +4,7 @@ import { Plus, Play, Pause, Check, Trash2, ChevronDown, ChevronUp, Camera, Loade
 import { COL, neu } from "../theme";
 import { fmtHMS } from "../lib/time";
 import { addTask, updateTask, deleteTask, addGoal, setGoalDone, removeGoal } from "../lib/firestore";
-import { uploadProofPhoto, telegramSrc } from "../lib/media";
+import { uploadProofPhoto, mediaSrc } from "../lib/media";
 
 const TAG_COLOR = { High: COL.coral, Medium: COL.blue, Low: COL.mint };
 
@@ -33,7 +33,10 @@ export default function Tasks({ uid, tasks }) {
     const finalElapsed = Math.floor(t.elapsed || 0);
     updateTask(uid, t.id, { done: !t.done, running: false, startedAt: null, elapsed: finalElapsed });
   };
-  const remove = (id) => deleteTask(uid, id);
+  const remove = (id) => {
+    const task = tasks.find((t) => t.id === id);
+    deleteTask(uid, id, task);
+  };
   const add = () => {
     if (!draft.trim()) return;
     addTask(uid, draft.trim());
@@ -180,7 +183,7 @@ function GoalsPanel({ uid, task, goals }) {
             </div>
             {/* full-size media preview so it's clear which photo was uploaded as proof */}
             {g.done && g.photoPath && (
-              <img src={telegramSrc(g.photoPath)} alt="proof" className="mt-1.5 w-full max-h-48 rounded-xl object-cover" />
+              <img src={mediaSrc(g.photoPath)} alt="proof" className="mt-1.5 w-full max-h-48 rounded-xl object-cover" />
             )}
             {g.done && !g.photoPath && (
               <div className="flex items-center gap-1 mt-1 font-body text-[10px]" style={{ color: COL.sub }}>
