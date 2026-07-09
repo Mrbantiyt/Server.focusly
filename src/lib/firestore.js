@@ -501,3 +501,31 @@ export async function getEmailForUsername(username) {
   if (!snap.exists()) return null;
   return snap.data().email || null;
 }
+
+// Self-heal: older versions of the app could reserve a username with a
+// missing/null email (e.g. changing username from Settings without also
+// updating the usernames/{key} doc), which silently breaks username-login
+// forever since getEmailForUsername() has nothing to return. Called after
+// every successful sign-in with a trusted (uid, email) pair, so it only
+// ever repairs the CURRENT user's own reservation — never touches anyone
+// else's doc. No-ops if the doc is already correct.
+export async function repairUsernameEmail(uid, email) {
+  if (!uid || !email) return;
+  try {
+    const userRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userRef);
+    const usernameLower = userSnap.exists() ? userSnap.data().usernameLower : null;
+    if (!usernameLower) return;
+
+    const usernameRef = doc(db, "usernames", usernameLower);
+    const usernameSnap = await getDoc(usernameRef);
+    if (!usernameSnap.exists()) return;
+
+    const data = usernameSnap.data();
+    if (data.uid === uid && data.email !== email) {
+      await setDoc(usernameRef, { uid, email }, { merge: true });
+    }
+  } catch {
+    // Best-effort repair — never block sign-in over this.
+  }
+}
