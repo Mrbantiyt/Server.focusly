@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import {
   ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks, Target,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
-  Database, HelpCircle, Clock,
+  Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3,
 } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs, fmtCompact } from "../lib/time";
@@ -339,11 +339,9 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coin
   const todayGoalsTotal = tasks.reduce((n, t) => n + (t.goals?.length || 0), 0);
   const todayGoalsDone = tasks.reduce((n, t) => n + (t.goals?.filter((g) => g.done).length || 0), 0);
 
-  // ...while these come from the lifetime counters that survive the daily
-  // wipe, so "Total tasks" keeps growing across every day the app's been used.
+  // ...while this comes from the lifetime counter that survives the daily
+  // wipe, so "Goals completed" keeps growing across every day the app's been used.
   const stats = taskStats || { totalCreated: 0, totalCompleted: 0, totalGoalsCompleted: 0 };
-  const totalTasksCreated = stats.totalCreated + tasks.length; // + today's not-yet-wiped tasks
-  const totalTasksCompleted = stats.totalCompleted + todayTasksDone;
   const totalGoalsCompleted = stats.totalGoalsCompleted + todayGoalsDone;
 
   return (
@@ -353,7 +351,6 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coin
         <StatTile icon={Clock} accent={COL.blue} label="Today time" value={fmtHrs(todaySeconds)} />
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
         <StatTile icon={ListChecks} accent={COL.mint} label="Today's tasks" value={`${todayTasksDone}/${tasks.length}`} note="Resets at midnight" />
-        <StatTile icon={ListChecks} accent={COL.blue} label="Total tasks" value={`${totalTasksCompleted}/${totalTasksCreated}`} note="All-time, never resets" />
         <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${totalGoalsCompleted}`} note="All-time" />
         <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
         <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
@@ -364,6 +361,89 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coin
 }
 
 /* -------------------------------- How to use app -------------------------------- */
+
+/* --------------------------------- Analytics -------------------------------- */
+
+// Builds a { dayKey: seconds } map for the last `days` days ending today,
+// merging the live `history` (which excludes today) with today's running total.
+function buildDailySeconds(history, dayKey, todaySeconds, days) {
+  const out = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const seconds = key === dayKey ? todaySeconds : (history[key] || 0);
+    out.push({ key, date: d, seconds });
+  }
+  return out;
+}
+
+function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
+  const daily = buildDailySeconds(history || {}, dayKey, todaySeconds || 0, 14);
+  const thisWeek = daily.slice(7, 14);
+  const lastWeek = daily.slice(0, 7);
+
+  const thisWeekTotal = thisWeek.reduce((s, d) => s + d.seconds, 0);
+  const lastWeekTotal = lastWeek.reduce((s, d) => s + d.seconds, 0);
+  const avgPerDay = thisWeekTotal / 7;
+
+  const bestDay = thisWeek.reduce((best, d) => (d.seconds > (best?.seconds ?? -1) ? d : best), null);
+  const bestDayLabel = bestDay ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
+
+  const weekDelta = lastWeekTotal > 0
+    ? Math.round(((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100)
+    : (thisWeekTotal > 0 ? 100 : 0);
+  const weekDeltaLabel = `${weekDelta > 0 ? "+" : ""}${weekDelta}%`;
+  const weekDeltaColor = weekDelta > 0 ? COL.mint : weekDelta < 0 ? COL.coral : COL.sub;
+
+  const tasksTotal = (tasks || []).length;
+  const tasksDone = (tasks || []).filter((t) => t.done).length;
+  const completionRate = tasksTotal > 0 ? Math.round((tasksDone / tasksTotal) * 100) : 0;
+
+  const maxBar = Math.max(1, ...thisWeek.map((d) => d.seconds));
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PanelHeader title="Weekly Analytics" onBack={onBack} />
+
+      <div className="grid grid-cols-2 gap-3">
+        <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(thisWeekTotal)} note="Last 7 days" />
+        <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(avgPerDay)} note="Per day this week" />
+        <StatTile icon={Flame} accent={COL.coral} label="Best day" value={fmtHrs(bestDay?.seconds || 0)} note={bestDayLabel} />
+        <StatTile
+          icon={weekDelta >= 0 ? TrendingUp : TrendingDown}
+          accent={weekDeltaColor}
+          label="vs last week"
+          value={weekDeltaLabel}
+          note={`${fmtHrs(lastWeekTotal)} last week`}
+        />
+        <StatTile icon={ListChecks} accent={COL.mint} label="Task completion" value={`${completionRate}%`} note={`${tasksDone}/${tasksTotal} today`} />
+      </div>
+
+      <div style={neu(false, 20)} className="p-4">
+        <div className="font-body text-xs mb-3" style={{ color: COL.sub }}>This week</div>
+        <div className="flex items-end justify-between gap-2" style={{ height: 100 }}>
+          {thisWeek.map((d) => {
+            const h = Math.max(4, Math.round((d.seconds / maxBar) * 84));
+            const isToday = d.key === dayKey;
+            return (
+              <div key={d.key} className="flex-1 flex flex-col items-center gap-2">
+                <div
+                  className="w-full rounded-lg"
+                  style={{ height: h, background: isToday ? COL.violet : COL.track }}
+                />
+                <div className="font-body text-[10px]" style={{ color: isToday ? COL.ink : COL.sub }}>
+                  {d.date.toLocaleDateString(undefined, { weekday: "narrow" })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function HowToUsePanel({ onBack }) {
   const steps = [
@@ -462,7 +542,7 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
   const [section, setSection] = useState(null); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -483,6 +563,14 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
       />
     );
   }
+  if (section === "analytics") {
+    return (
+      <AnalyticsPanel
+        history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks}
+        onBack={() => setSection(null)}
+      />
+    );
+  }
   if (section === "howto") return <HowToUsePanel onBack={() => setSection(null)} />;
   if (section === "password") return <ChangePasswordPanel user={user} onBack={() => setSection(null)} />;
 
@@ -496,6 +584,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
 
       <SectionLabel>Your account</SectionLabel>
       <MenuRow icon={Database} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Your data" onClick={() => setSection("data")} />
+      <MenuRow icon={BarChart3} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Weekly Analytics" onClick={() => setSection("analytics")} />
 
       <SectionLabel>Support</SectionLabel>
       <MenuRow icon={HelpCircle} iconBg="rgba(255,122,133,0.15)" iconColor={COL.coral} label="How to use app" onClick={() => setSection("howto")} />
