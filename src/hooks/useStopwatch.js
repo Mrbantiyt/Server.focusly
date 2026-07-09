@@ -41,8 +41,21 @@ export function useStopwatch(uid) {
   const runStartedAtRef = useRef(null); // Date.now() when the current run began, or null if paused
   const runningRef = useRef(false);     // mirrors `running`, readable from effects/closures without re-subscribing
   const flushedAtRef = useRef(0);
+  // Highest value we ourselves have written to Firestore this session.
+  // Any inbound snapshot smaller than this is guaranteed to be a stale
+  // echo of an earlier in-flight write landing out of order, not real
+  // new information, and must never overwrite a more recent local write
+  // (this is what caused "Time today" to snap backward right after pausing).
+  const lastLocalWriteRef = useRef(0);
 
   useEffect(() => { runningRef.current = running; }, [running]);
+
+  // All local writes MUST go through this so lastLocalWriteRef always
+  // reflects the freshest value we've sent, regardless of network timing.
+  const writeStudyDay = (writeUid, writeDayKey, value) => {
+    lastLocalWriteRef.current = Math.max(lastLocalWriteRef.current, value);
+    setStudyDay(writeUid, writeDayKey, value);
+  };
 
   // True elapsed stopwatch seconds right now, live-including the current run.
   const liveStopwatch = () => {
@@ -68,7 +81,14 @@ export function useStopwatch(uid) {
   // already accounts for elapsed run time) instead of bankedRef.current
   // makes a same-session echo a guaranteed no-op, so no time is lost.
   const applyRemote = ({ seconds }) => {
-    if (seconds <= liveStopwatch()) return;
+    // Guard against a stale echo of an EARLIER local write landing after a
+    // LATER local write already banked a smaller number (e.g. a periodic
+    // flush's echo arriving after a pause-write). lastLocalWriteRef always
+    // reflects the most recent value we ourselves sent, so any inbound
+    // value below it is old news and must be ignored — liveStopwatch()
+    // alone won't catch this once we're paused, since it just returns
+    // bankedRef at that point.
+    if (seconds <= liveStopwatch() || seconds < lastLocalWriteRef.current) return;
     bankedRef.current = seconds;
     if (runningRef.current) runStartedAtRef.current = Date.now();
     forceTick((n) => n + 1);
@@ -96,10 +116,11 @@ export function useStopwatch(uid) {
     const id = setInterval(() => {
       const key = dayKeyFor(new Date());
       if (key !== dayKey) {
-        if (uid) setStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
+        if (uid) writeStudyDay(uid, dayKey, Math.floor(liveStopwatch())); // flush the finished day
         bankedRef.current = 0;
         sessionBaseRef.current = 0;
         runStartedAtRef.current = runningRef.current ? Date.now() : null;
+        lastLocalWriteRef.current = 0; // new day, new document — old watermark no longer applies
         setDayKey(key);
         return;
       }
@@ -114,7 +135,7 @@ export function useStopwatch(uid) {
     const id = setInterval(() => {
       if (runningRef.current && Date.now() - flushedAtRef.current > FLUSH_MS) {
         flushedAtRef.current = Date.now();
-        setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
+        writeStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
       }
     }, 1000);
     return () => clearInterval(id);
@@ -132,7 +153,7 @@ export function useStopwatch(uid) {
         const banked = Math.floor(liveStopwatch());
         bankedRef.current = banked;
         runStartedAtRef.current = null;
-        if (uid) setStudyDay(uid, dayKey, banked);
+        if (uid) writeStudyDay(uid, dayKey, banked);
       }
       return next;
     });
@@ -145,7 +166,7 @@ export function useStopwatch(uid) {
   useEffect(() => {
     if (!uid) return;
     const flushNow = () => {
-      if (runningRef.current) setStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
+      if (runningRef.current) writeStudyDay(uid, dayKey, Math.floor(liveStopwatch()));
     };
     const onVisibility = () => {
       forceTick((n) => n + 1);
