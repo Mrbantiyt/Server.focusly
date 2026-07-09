@@ -379,7 +379,7 @@ function buildDailySeconds(history, dayKey, todaySeconds, days) {
   return out;
 }
 
-function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
+export function AnalyticsContent({ history, dayKey, todaySeconds, tasks }) {
   const daily = buildDailySeconds(history || {}, dayKey, todaySeconds || 0, 14);
   const thisWeek = daily.slice(7, 14);
   const lastWeek = daily.slice(0, 7);
@@ -405,8 +405,6 @@ function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <PanelHeader title="Weekly Analytics" onBack={onBack} />
-
       <div className="grid grid-cols-2 gap-3">
         <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(thisWeekTotal)} note="Last 7 days" />
         <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(avgPerDay)} note="Per day this week" />
@@ -441,6 +439,15 @@ function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+export function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
+  return (
+    <div className="flex flex-col gap-5">
+      <PanelHeader title="Weekly Analytics" onBack={onBack} />
+      <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks} />
     </div>
   );
 }

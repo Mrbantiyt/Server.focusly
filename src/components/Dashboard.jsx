@@ -4,6 +4,7 @@ import { Bell, Sparkles, LogOut } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
 import { StopwatchCard, StatCard } from "./StopwatchCard";
+import { AnalyticsContent } from "./Settings";
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -13,7 +14,7 @@ function getGreeting() {
   return "Good night";
 }
 
-export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout }) {
+export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout, history, dayKey }) {
   const doneCount = tasks.filter((t) => t.done).length;
   const name = user.displayName || "Student";
   const greeting = getGreeting();
@@ -55,6 +56,12 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
           <div className="font-body text-xs" style={{ color: COL.sub }}>Gemini for notes, Google for search</div>
         </div>
       </button>
+
+      {/* Weekly Analytics — shown directly on the home page */}
+      <div className="flex flex-col gap-3">
+        <div className="font-display font-bold text-sm px-0.5" style={{ color: COL.ink }}>Weekly Analytics</div>
+        <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={bankedSeconds} tasks={tasks} />
+      </div>
     </div>
   );
 }
