@@ -1,29 +1,23 @@
 // src/components/Tasks.jsx
 import React, { useRef, useState } from "react";
-import { Plus, Play, Pause, Check, Trash2, ChevronDown, ChevronUp, Camera, Loader2, ImageOff, Clock } from "lucide-react";
+import { Plus, Check, Trash2, ChevronDown, ChevronUp, Camera, Loader2, ImageOff } from "lucide-react";
 import { COL, neu } from "../theme";
-import { fmtHMS } from "../lib/time";
 import { addTask, updateTask, deleteTask, addGoal, setGoalDone, removeGoal } from "../lib/firestore";
 import { uploadProofPhoto, mediaSrc } from "../lib/media";
 
 const TAG_COLOR = { High: COL.coral, Medium: COL.blue, Low: COL.mint };
 
-// `tasks` is passed down from App.jsx (via the useTasks hook), which keeps
-// ticking a running task's elapsed time even while this tab isn't open —
-// see src/hooks/useTasks.js for why that used to break.
-//
-// `onToggleRun` is also from useTasks — it updates local state immediately
-// (not just Firestore), so Play/Pause never waits on a network round-trip
-// to visibly start/stop the timer.
-export default function Tasks({ uid, tasks, onToggleRun }) {
+// `tasks` is passed down from App.jsx (via the useTasks hook).
+// Per-task timers (Play/Pause + elapsed time) have been removed — tasks
+// are now a plain checklist, completed manually or via goal photos.
+export default function Tasks({ uid, tasks }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
 
   const toggleManualDone = (t) => {
     // only used for tasks with no goals — goal-based tasks auto-complete
     if ((t.goals || []).length > 0) return;
-    const finalElapsed = Math.floor(t.elapsed || 0);
-    updateTask(uid, t.id, { done: !t.done, running: false, startedAt: null, elapsed: finalElapsed });
+    updateTask(uid, t.id, { done: !t.done });
   };
   const remove = (id) => {
     const task = tasks.find((t) => t.id === id);
@@ -51,7 +45,6 @@ export default function Tasks({ uid, tasks, onToggleRun }) {
             task={t}
             open={openId === t.id}
             onToggleOpen={() => setOpenId((id) => (id === t.id ? null : t.id))}
-            onToggleRun={() => onToggleRun(t)}
             onToggleManualDone={() => toggleManualDone(t)}
             onRemove={() => remove(t.id)}
           />
@@ -64,7 +57,7 @@ export default function Tasks({ uid, tasks, onToggleRun }) {
   );
 }
 
-function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManualDone, onRemove }) {
+function TaskCard({ uid, task: t, open, onToggleOpen, onToggleManualDone, onRemove }) {
   const goals = t.goals || [];
   const hasGoals = goals.length > 0;
   const doneCount = goals.filter((g) => g.done).length;
@@ -72,19 +65,12 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
   return (
     <div style={neu(false, 18)} className="p-3.5 flex flex-col gap-2">
       <div className="flex items-center gap-3">
-        <button onClick={onToggleRun} disabled={t.done}
-          className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ background: t.running ? COL.violet : COL.track, opacity: t.done ? 0.4 : 1 }}>
-          {t.running ? <Pause size={13} color="#fff" /> : <Play size={13} color={COL.sub} />}
-        </button>
-
         <button className="flex-1 text-left" onClick={onToggleOpen}>
           <div className="font-body text-sm" style={{ color: COL.ink, textDecoration: t.done ? "line-through" : "none", opacity: t.done ? 0.5 : 1 }}>
             {t.title}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <span className="font-body text-[11px] px-2 py-0.5 rounded-full" style={{ background: `${TAG_COLOR[t.tag] || COL.blue}1f`, color: TAG_COLOR[t.tag] || COL.blue }}>{t.tag}</span>
-            <span className="font-body text-[11px]" style={{ color: COL.sub }}>{fmtHMS(t.elapsed)}</span>
             {hasGoals && (
               <span className="font-body text-[11px]" style={{ color: COL.violet }}>{doneCount}/{goals.length} goals</span>
             )}
@@ -112,13 +98,7 @@ function TaskCard({ uid, task: t, open, onToggleOpen, onToggleRun, onToggleManua
 
       {open && (
         <div className="flex flex-col gap-2 pt-2 border-t" style={{ borderColor: "rgba(163,170,199,0.25)" }}>
-          {/* watch icon: how long this task has run, and whether it's currently ticking */}
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-1.5">
-              <Clock size={13} color={t.running ? COL.violet : COL.sub} />
-              <span className="font-body text-xs font-semibold" style={{ color: t.running ? COL.violet : COL.ink }}>{fmtHMS(t.elapsed)}</span>
-              <span className="font-body text-[10px]" style={{ color: COL.sub }}>{t.running ? "running" : "paused"}</span>
-            </div>
+          <div className="flex items-center justify-end px-2">
             {/* completion status */}
             <span className="font-body text-[11px] font-semibold px-2 py-0.5 rounded-full"
               style={{ background: t.done ? `${COL.mint}22` : `${COL.coral}1f`, color: t.done ? COL.mint : COL.coral }}>
