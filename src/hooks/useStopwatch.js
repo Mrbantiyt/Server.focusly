@@ -47,6 +47,16 @@ export function useStopwatch(uid) {
   // new information, and must never overwrite a more recent local write
   // (this is what caused "Time today" to snap backward right after pausing).
   const lastLocalWriteRef = useRef(0);
+  // Highest value the FACE has ever shown this session. A pure UI floor:
+  // even if some edge case slipped a smaller bankedRef past every other
+  // guard, the number on screen must never visibly drop — pausing at
+  // 8:30 must keep showing 8:30, never snap back to an earlier moment.
+  const displayFloorRef = useRef(0);
+  // Same idea as displayFloorRef, but for "Time today" — it must never
+  // visibly drop either. Unlike the face, this one has no Reset case that
+  // should legitimately lower it; it only ever holds or climbs, all the
+  // way until the actual midnight rollover starts a new day.
+  const todayFloorRef = useRef(0);
 
   useEffect(() => { runningRef.current = running; }, [running]);
 
@@ -100,6 +110,8 @@ export function useStopwatch(uid) {
     bankedRef.current = 0;
     sessionBaseRef.current = 0;
     runStartedAtRef.current = runningRef.current ? Date.now() : null;
+    displayFloorRef.current = 0;
+    todayFloorRef.current = 0;
 
     let cancelled = false;
     getStudyDay(uid, dayKey).then((d) => { if (!cancelled) applyRemote(d); });
@@ -121,6 +133,8 @@ export function useStopwatch(uid) {
         sessionBaseRef.current = 0;
         runStartedAtRef.current = runningRef.current ? Date.now() : null;
         lastLocalWriteRef.current = 0; // new day, new document — old watermark no longer applies
+        displayFloorRef.current = 0;
+        todayFloorRef.current = 0;
         setDayKey(key);
         return;
       }
@@ -185,11 +199,21 @@ export function useStopwatch(uid) {
   // Zeroes only the stopwatch FACE (via a snapshot of the current banked
   // stopwatch total). "Time today" is untouched and keeps counting in the
   // background — it only resets automatically at midnight.
-  const reset = () => { sessionBaseRef.current = liveStopwatch(); forceTick((n) => n + 1); };
+  const reset = () => {
+    sessionBaseRef.current = liveStopwatch();
+    displayFloorRef.current = 0; // the one intentional case where the face should drop
+    forceTick((n) => n + 1);
+  };
 
   const liveSw = liveStopwatch();
-  const displaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
-  const todaySeconds = liveSw;
+  const rawDisplaySeconds = Math.max(0, liveSw - sessionBaseRef.current);
+  // Never let the visible face drop below the highest value it already
+  // showed (except right after Reset, handled above).
+  displayFloorRef.current = Math.max(displayFloorRef.current, rawDisplaySeconds);
+  const displaySeconds = displayFloorRef.current;
+  // Same protection for "Time today" — it only ever holds or climbs.
+  todayFloorRef.current = Math.max(todayFloorRef.current, liveSw);
+  const todaySeconds = todayFloorRef.current;
 
   return { seconds: displaySeconds, todaySeconds, running, toggle, reset, dayKey };
 }
