@@ -124,7 +124,7 @@ export default function App() {
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
                   tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey} />
               )}
-              {tab === "chat" && <Chat />}
+              {tab === "chat" && <Chat user={user} />}
               {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
               {tab === "cal" && (
                 <div className="flex flex-col gap-6">
