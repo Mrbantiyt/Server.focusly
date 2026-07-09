@@ -52,10 +52,23 @@ export function useStopwatch(uid) {
   };
 
   // Accepts { seconds } learned from Firestore (initial load or live sync).
-  // Only ever moves bankedRef FORWARD (and re-stamps the run start so a
-  // run in progress doesn't double-count).
+  // Only ever moves bankedRef FORWARD, and only based on what the live
+  // total already reflects — never based on the stale bankedRef snapshot.
+  //
+  // Why this matters: while running, periodic flushes write the live total
+  // to Firestore but deliberately don't touch bankedRef/runStartedAtRef
+  // (the run is still in progress). When that write's own echo comes back
+  // through the onSnapshot listener some time later (network round-trip),
+  // comparing the incoming value only against the old bankedRef made it
+  // look "newer" than what was banked, even though real (wall-clock) time
+  // had since moved on further. That overwrote bankedRef with a
+  // slightly-stale number AND re-stamped runStartedAtRef to "now" —
+  // silently dropping every second between when the flush was sent and
+  // when its echo arrived. Comparing against liveStopwatch() (which
+  // already accounts for elapsed run time) instead of bankedRef.current
+  // makes a same-session echo a guaranteed no-op, so no time is lost.
   const applyRemote = ({ seconds }) => {
-    if (seconds <= bankedRef.current) return;
+    if (seconds <= liveStopwatch()) return;
     bankedRef.current = seconds;
     if (runningRef.current) runStartedAtRef.current = Date.now();
     forceTick((n) => n + 1);
