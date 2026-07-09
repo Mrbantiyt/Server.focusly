@@ -6,7 +6,7 @@ import {
   sendPasswordResetEmail, updateProfile,
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { ensureUserProfile, claimUsername, getEmailForUsername, isUsernameAvailable } from "../lib/firestore";
+import { ensureUserProfile, claimUsername, getEmailForUsername, isUsernameAvailable, repairUsernameEmail } from "../lib/firestore";
 
 export function useAuth() {
   const [user, setUser] = useState(null);
@@ -16,6 +16,10 @@ export function useAuth() {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
+      // Fire-and-forget: fixes any username reservation left with a
+      // missing/null email by an older buggy build. Safe to run on every
+      // sign-in — it's a no-op once the doc is already correct.
+      if (u) repairUsernameEmail(u.uid, u.email);
     });
     return unsub;
   }, []);

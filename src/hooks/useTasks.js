@@ -50,6 +50,29 @@ export function useTasks(uid) {
     return rs.banked + ranSec;
   };
 
+  // Starts/stops a task's timer LOCALLY first (updates runStateRef + the
+  // `tasks` state immediately, so the UI starts/stops ticking the instant
+  // the button is pressed), then fires the Firestore write in the
+  // background. Previously the button only ever toggled Firestore and
+  // waited for watchTasks' onSnapshot echo to update local state — on a
+  // slow/flaky connection that echo can lag by seconds, which looked like
+  // the timer "randomly not starting" or "getting stuck" on tap. Now the
+  // UI never waits on the network for this.
+  const toggleTaskRun = (task) => {
+    const now = Date.now();
+    if (task.running) {
+      const finalElapsed = Math.floor(liveElapsed(task));
+      delete runStateRef.current[task.id];
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, running: false, startedAt: null, elapsed: finalElapsed } : t)));
+      updateTask(uid, task.id, { running: false, startedAt: null, elapsed: finalElapsed });
+    } else {
+      const startBanked = Math.floor(task.elapsed || 0);
+      runStateRef.current[task.id] = { banked: startBanked, runStartedAt: now, flushedAt: now };
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, running: true, startedAt: now } : t)));
+      updateTask(uid, task.id, { running: true, startedAt: now });
+    }
+  };
+
   // Tasks are a DAILY list: every local midnight, today's tasks are wiped
   // (after crediting their completion counts into taskStats — see
   // runMidnightTaskReset). This runs once immediately on mount, which
@@ -168,5 +191,5 @@ export function useTasks(uid) {
   // without ever double-counting a run that's already been banked.
   const liveTasks = tasks.map((t) => (t.running ? { ...t, elapsed: liveElapsed(t) } : t));
 
-  return liveTasks;
+  return { tasks: liveTasks, toggleTaskRun };
 }
