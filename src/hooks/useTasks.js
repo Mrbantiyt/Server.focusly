@@ -27,7 +27,8 @@
 // run-time again instead of double-adding what was just banked. Remote
 // snapshots are only applied if they don't fight an in-progress local run.
 import { useEffect, useRef, useState } from "react";
-import { watchTasks, updateTask } from "../lib/firestore";
+import { watchTasks, updateTask, runMidnightTaskReset } from "../lib/firestore";
+import { dayKeyFor, msUntilNextReset } from "../lib/time";
 
 const FLUSH_MS = 5000;
 
@@ -48,6 +49,34 @@ export function useTasks(uid) {
     const ranSec = Math.max(0, (Date.now() - rs.runStartedAt) / 1000);
     return rs.banked + ranSec;
   };
+
+  // Tasks are a DAILY list: every local midnight, today's tasks are wiped
+  // (after crediting their completion counts into taskStats — see
+  // runMidnightTaskReset). This runs once immediately on mount, which
+  // covers "app was closed overnight and just reopened after midnight",
+  // and then re-arms itself for the next exact midnight boundary while the
+  // app stays open, so a session spanning midnight also gets reset live
+  // instead of only on next app launch.
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+    let timeoutId;
+
+    const runAndReschedule = () => {
+      if (cancelled) return;
+      runMidnightTaskReset(uid, dayKeyFor(new Date())).catch(() => {
+        // Non-fatal: if this fails (e.g. offline), the next mount or the
+        // next midnight timer will simply try again.
+      });
+      timeoutId = setTimeout(runAndReschedule, msUntilNextReset() + 1000);
+    };
+
+    runAndReschedule();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [uid]);
 
   // live sync from Firestore — updates instantly across tabs/devices
   useEffect(() => {
