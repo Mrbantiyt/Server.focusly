@@ -23,7 +23,8 @@ export function fmtHMS(totalSeconds) {
 
 export function fmtHrs(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
-  if (s < 3600) return `${Math.floor(s / 60)}m`; // avoids showing "0.0h" for short sessions
+  if (s < 60) return `${s}s`; // show seconds directly instead of always rounding down to "0m"
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
   return (s / 3600).toFixed(1) + "h";
 }
 
