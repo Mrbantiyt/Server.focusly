@@ -97,15 +97,35 @@ export async function updateTask(uid, taskId, patch) {
 // `taskData` is optional: pass the task object if you already have it
 // (e.g. from the live tasks list) to avoid an extra read; otherwise this
 // fetches it itself so photo cleanup still happens either way.
+//
+// IMPORTANT: this credits the task's completion status into the lifetime
+// taskStats counters BEFORE deleting it — exactly like runMidnightTaskReset
+// does for the automatic daily wipe. Without this, manually deleting a
+// task would silently erase it from "Total tasks"/"Goals completed" in
+// Settings, even though those are meant to be permanent, never-decreasing
+// counters (same idea as "Total study time").
 export async function deleteTask(uid, taskId, taskData = null) {
   const ref = doc(db, "users", uid, "tasks", taskId);
 
-  let goals = taskData?.goals;
-  if (!goals) {
+  let task = taskData;
+  if (!task) {
     const snap = await getDoc(ref);
-    goals = snap.exists() ? snap.data()?.goals : [];
+    task = snap.exists() ? { id: snap.id, ...snap.data() } : null;
   }
-  const photoPaths = (goals || []).map((g) => g.photoPath).filter(Boolean);
+  const goals = task?.goals || [];
+  const photoPaths = goals.map((g) => g.photoPath).filter(Boolean);
+
+  // Credit lifetime counters for what's about to be deleted, same as the
+  // midnight reset does for the tasks it wipes.
+  const wasCompleted = !!task?.done;
+  const goalsDoneCount = goals.filter((g) => g.done).length;
+  if (wasCompleted || goalsDoneCount > 0) {
+    const statsRef = doc(db, "users", uid);
+    await setDoc(statsRef, {
+      "taskStats.totalCompleted": increment(wasCompleted ? 1 : 0),
+      "taskStats.totalGoalsCompleted": increment(goalsDoneCount),
+    }, { merge: true });
+  }
 
   await deleteDoc(ref);
 
