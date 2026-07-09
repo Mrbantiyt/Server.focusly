@@ -452,6 +452,8 @@ function HowToUsePanel({ onBack }) {
     { title: "Add tasks and goals", body: "On the Tasks tab, add what you're working on. Tasks with goals auto-complete once every goal is checked off; simple tasks can be marked done manually." },
     { title: "Run a task's own timer", body: "Each task has its own play/pause timer so you can track how long you spend on that specific task, separate from the main stopwatch." },
     { title: "Check your Calendar", body: "The Calendar tab shows how many hours you studied on each day, plus a 7-day / 1-month progress chart." },
+    { title: "See your stats in Your data", body: "Settings → Your data shows today's time, total study time, today's tasks, goals completed, coins, streak, and level, all in one place." },
+    { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, today's task completion rate, and a 7-day bar chart." },
     { title: "Earn XP, coins, and streaks", body: "You earn XP for every 10 seconds you study, level up over time, and build a daily streak by opening the app and studying each day. Coins are paid out on level-up and can be spent in the Store." },
     { title: "Customize your look", body: "Buy mascots in the Store with coins, then pick your favorite as your app icon under Settings → Customize." },
     { title: "Ask AI", body: "Use \"Ask AI\" on Home for quick help — it links out to Gemini for notes and Google for search." },
