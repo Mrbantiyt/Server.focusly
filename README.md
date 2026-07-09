@@ -77,7 +77,10 @@ web browser se hi set hoti hain (PC/terminal ki zaroorat nahi):
 **Project → Settings → Environment Variables**
 
 ```
-OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-v1-...
+# Optional — defaults to google/gemini-2.0-flash-001 (vision-capable, cheap).
+# Any vision-capable model listed at https://openrouter.ai/models works here.
+OPENROUTER_MODEL=google/gemini-2.0-flash-001
 TELEGRAM_BOT_TOKEN=1234:ABC...
 TELEGRAM_CHAT_ID=-100xxxxxxxxxx
 ```
