@@ -1,9 +1,10 @@
 // src/lib/firestore.js
 import {
-  doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc,
-  onSnapshot, query, where, documentId, serverTimestamp, runTransaction,
+  doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc, getDocs, writeBatch,
+  onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment,
 } from "firebase/firestore";
 import { db } from "../firebase";
+import { deleteMediaFiles } from "./media";
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
 
@@ -43,10 +44,13 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
 
 // users/{uid}/tasks/{taskId} = {
 //   title, tag, elapsed, running, startedAt, done, createdAt,
-//   goals: [{ id, text, done, photoPath }]   <- photoPath is a Telegram file
-//                                               path (see src/lib/media.js),
-//                                               NOT a raw URL (keeps the bot
-//                                               token server-side only).
+//   goals: [{ id, text, done, photoPath }]   <- photoPath is a Supabase
+//                                               Storage object path (see
+//                                               src/lib/media.js), resolved
+//                                               to a public CDN URL via
+//                                               mediaSrc() — the bucket is
+//                                               public, so no token needs
+//                                               to stay server-side here.
 // }
 // `elapsed` is the banked total (seconds) as of the last time the task was
 // paused/flushed. While `running` is true, `startedAt` (a millisecond
@@ -73,6 +77,14 @@ export async function addTask(uid, title, tag = "Medium") {
     title, tag, done: false, elapsed: 0, running: false, startedAt: null, goals: [],
     createdAt: serverTimestamp(),
   });
+  // Fire-and-forget lifetime counter bump — Settings' "Total tasks" reads
+  // this instead of the live tasks collection, since that collection gets
+  // wiped every midnight (see runMidnightTaskReset). Dot-notation path is
+  // required here (not a nested object) so `merge: true` + `increment()`
+  // only touches this one field instead of overwriting the whole
+  // `taskStats` map and losing the other counters.
+  const statsRef = doc(db, "users", uid);
+  await setDoc(statsRef, { "taskStats.totalCreated": increment(1) }, { merge: true });
 }
 
 export async function updateTask(uid, taskId, patch) {
@@ -80,9 +92,91 @@ export async function updateTask(uid, taskId, patch) {
   await updateDoc(ref, patch);
 }
 
-export async function deleteTask(uid, taskId) {
+// Deletes a task, and any goal-proof photos it had, from storage too —
+// so removing a task doesn't leave orphaned images behind in Supabase.
+// `taskData` is optional: pass the task object if you already have it
+// (e.g. from the live tasks list) to avoid an extra read; otherwise this
+// fetches it itself so photo cleanup still happens either way.
+export async function deleteTask(uid, taskId, taskData = null) {
   const ref = doc(db, "users", uid, "tasks", taskId);
+
+  let goals = taskData?.goals;
+  if (!goals) {
+    const snap = await getDoc(ref);
+    goals = snap.exists() ? snap.data()?.goals : [];
+  }
+  const photoPaths = (goals || []).map((g) => g.photoPath).filter(Boolean);
+
   await deleteDoc(ref);
+
+  if (photoPaths.length > 0) {
+    await deleteMediaFiles(photoPaths);
+  }
+}
+
+// Runs once per calendar day (called from useTasks, guarded by
+// taskStats.lastResetDay so it only actually executes the first time it's
+// invoked on a given day, no matter how many tabs/devices are open).
+//
+// Tasks are meant to be a daily list, not a permanently growing one — this
+// wipes everything in users/{uid}/tasks at the local midnight boundary,
+// but first folds each task's completion status into the lifetime
+// taskStats counters, so "Total tasks completed" in Settings keeps
+// counting up forever even though the live list resets to empty every day.
+export async function runMidnightTaskReset(uid, todayKey) {
+  const statsRef = doc(db, "users", uid);
+
+  // Transaction just for the "have we already reset today" check + claim,
+  // so two tabs racing at midnight can't both run the wipe twice.
+  const shouldRun = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(statsRef);
+    const lastResetDay = snap.exists() ? snap.data()?.taskStats?.lastResetDay : null;
+    if (lastResetDay === todayKey) return false;
+    tx.set(statsRef, { "taskStats.lastResetDay": todayKey }, { merge: true });
+    return true;
+  });
+  if (!shouldRun) return;
+
+  const tasksRef = collection(db, "users", uid, "tasks");
+  const snap = await getDocs(tasksRef);
+  if (snap.empty) return;
+
+  let completedCount = 0;
+  let goalsCompletedCount = 0;
+  const photoPaths = [];
+  for (const d of snap.docs) {
+    const t = d.data();
+    if (t.done) completedCount++;
+    const goals = t.goals || [];
+    goalsCompletedCount += goals.filter((g) => g.done).length;
+    goals.forEach((g) => { if (g.photoPath) photoPaths.push(g.photoPath); });
+  }
+
+  // Credit lifetime counters for what's about to be deleted...
+  if (completedCount > 0 || goalsCompletedCount > 0) {
+    await setDoc(statsRef, {
+      "taskStats.totalCompleted": increment(completedCount),
+      "taskStats.totalGoalsCompleted": increment(goalsCompletedCount),
+    }, { merge: true });
+  }
+
+  // ...then delete every task doc. Firestore batches cap at 500 writes,
+  // which is far more than a daily task list will ever hold, but chunking
+  // here means it stays correct even for an unusually large list.
+  const docs = snap.docs;
+  for (let i = 0; i < docs.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const d of docs.slice(i, i + 450)) batch.delete(d.ref);
+    await batch.commit();
+  }
+
+  // Finally, clean up every goal-proof photo that belonged to today's
+  // (now-deleted) tasks, so they don't sit in Supabase forever as orphaned
+  // files with no Firestore doc pointing at them anymore. Chunked the same
+  // way as the delete-endpoint's own per-call cap.
+  for (let i = 0; i < photoPaths.length; i += 200) {
+    await deleteMediaFiles(photoPaths.slice(i, i + 200));
+  }
 }
 
 // Add a new goal (sub-step) to a task.
@@ -102,6 +196,9 @@ export async function addGoal(uid, taskId, currentGoals, text) {
 // auto-completes we just bank it as-is; adding (Date.now() - startedAt) on
 // top again would double-count the current run.
 export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, photoPath = null, taskState = {}) {
+  const prevGoal = (currentGoals || []).find((g) => g.id === goalId);
+  const oldPhotoPath = prevGoal?.photoPath || null;
+
   const goals = (currentGoals || []).map((g) =>
     g.id === goalId ? { ...g, done: isDone, photoPath: isDone ? photoPath : null } : g
   );
@@ -115,13 +212,28 @@ export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, pho
   }
 
   await updateTask(uid, taskId, patch);
+
+  // If this goal had a different photo before (unmarking it, or replacing
+  // it with a fresh proof photo), delete the old one from storage — it's
+  // no longer referenced by anything in Firestore, so leaving it would
+  // just be an orphaned file taking up storage forever.
+  if (oldPhotoPath && oldPhotoPath !== photoPath) {
+    await deleteMediaFiles([oldPhotoPath]);
+  }
+
   return goals;
 }
 
 export async function removeGoal(uid, taskId, currentGoals, goalId) {
+  const removed = (currentGoals || []).find((g) => g.id === goalId);
   const goals = (currentGoals || []).filter((g) => g.id !== goalId);
   const allDone = goals.length > 0 && goals.every((g) => g.done);
   await updateTask(uid, taskId, { goals, done: allDone });
+
+  if (removed?.photoPath) {
+    await deleteMediaFiles([removed.photoPath]);
+  }
+
   return goals;
 }
 
@@ -167,50 +279,73 @@ export function watchGameStats(uid, cb) {
       streakDays: d.streakDays || {},
       ownedItems: d.ownedItems || [],
       activeMascot: d.activeMascot || "default",
+      // Lifetime task/goal counters. These survive the daily midnight task
+      // wipe (see runMidnightTaskReset below) — the live `tasks` collection
+      // only ever holds *today's* tasks, so "Total tasks" in Settings has to
+      // come from this running total instead of tasks.length.
+      taskStats: {
+        totalCreated: d.taskStats?.totalCreated || 0,
+        totalCompleted: d.taskStats?.totalCompleted || 0,
+        totalGoalsCompleted: d.taskStats?.totalGoalsCompleted || 0,
+        lastResetDay: d.taskStats?.lastResetDay || null,
+      },
     });
   });
 }
 
+// Wrapped in a transaction so two near-simultaneous calls (e.g. finishing
+// two tasks back-to-back, or two open tabs) can never both read the same
+// stale xp/coins value and silently clobber each other's write. Firestore
+// retries the transaction automatically if it detects a conflicting write
+// mid-flight, so this is safe under real concurrency, unlike the previous
+// plain getDoc + setDoc version.
 export async function addXp(uid, amount) {
   const ref = doc(db, "users", uid);
-  const snap = await getDoc(ref);
-  const d = snap.exists() ? snap.data() : {};
-  const prevXp = d.xp || 0;
-  const prevCoins = d.coins || 0;
 
-  const newXp = prevXp + amount;
-  const prevLevel = levelFromXp(prevXp).level;
-  const newLevel = levelFromXp(newXp).level;
-  const levelsGained = Math.max(0, newLevel - prevLevel);
+  const result = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const prevXp = d.xp || 0;
+    const prevCoins = d.coins || 0;
 
-  // Coin reward scales with the level reached: reaching level 1 pays 1000,
-  // level 2 pays 2000, level 3 pays 3000, etc. — i.e. level * 1000 for each
-  // level crossed, not a flat 1000 per level. If several levels are gained
-  // in one jump (e.g. a big XP reward), each crossed level's own reward is
-  // added up (so 1 -> 3 pays 2000 + 3000, not just 2 * 1000).
-  let coinsEarned = 0;
-  for (let lvl = prevLevel + 1; lvl <= newLevel; lvl++) {
-    coinsEarned += lvl * 1000;
-  }
-  const newCoins = prevCoins + coinsEarned;
+    const newXp = prevXp + amount;
+    const prevLevel = levelFromXp(prevXp).level;
+    const newLevel = levelFromXp(newXp).level;
+    const levelsGained = Math.max(0, newLevel - prevLevel);
 
-  await setDoc(ref, { xp: newXp, coins: newCoins }, { merge: true });
-  return { xp: newXp, coins: newCoins, level: newLevel, levelsGained };
+    let coinsEarned = 0;
+    for (let lvl = prevLevel + 1; lvl <= newLevel; lvl++) {
+      coinsEarned += lvl * 1000;
+    }
+    const newCoins = prevCoins + coinsEarned;
+
+    tx.set(ref, { xp: newXp, coins: newCoins }, { merge: true });
+    return { xp: newXp, coins: newCoins, level: newLevel, levelsGained };
+  });
+
+  return result;
 }
 
+// Transactional so two logins firing near-simultaneously (e.g. two tabs
+// open right at midnight rollover) can't both read "not logged in today
+// yet" and both increment the streak — the second one now sees the first
+// one's write and correctly no-ops instead of double-counting.
 export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
   const ref = doc(db, "users", uid);
-  const snap = await getDoc(ref);
-  const d = snap.exists() ? snap.data() : {};
-  const lastDay = d.lastStreakDay || null;
 
-  if (lastDay === todayKey) return;
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const lastDay = d.lastStreakDay || null;
 
-  const continuing = lastDay === yesterdayKey;
-  const newStreak = continuing ? (d.streak || 0) + 1 : 1;
-  const streakDays = { ...(d.streakDays || {}), [todayKey]: true };
+    if (lastDay === todayKey) return;
 
-  await setDoc(ref, { streak: newStreak, lastStreakDay: todayKey, streakDays }, { merge: true });
+    const continuing = lastDay === yesterdayKey;
+    const newStreak = continuing ? (d.streak || 0) + 1 : 1;
+    const streakDays = { ...(d.streakDays || {}), [todayKey]: true };
+
+    tx.set(ref, { streak: newStreak, lastStreakDay: todayKey, streakDays }, { merge: true });
+  });
 }
 
 /* ------------------------------------ store ------------------------------------- */
@@ -218,24 +353,33 @@ export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
 // Buys a store item for `cost` coins (fails if not enough coins or already
 // owned), adds it to users/{uid}.ownedItems, and equips it as the active
 // mascot. Returns { ok, reason? }.
+//
+// Wrapped in a transaction for the same reason as addXp/registerDailyLogin:
+// without it, two near-simultaneous purchase taps (double-tap, or two open
+// tabs) could both read "coins: 1000, not yet owned", both pass the checks,
+// and both write — silently double-spending coins or double-charging for
+// the same item.
 export async function purchaseItem(uid, itemId, cost) {
   const ref = doc(db, "users", uid);
-  const snap = await getDoc(ref);
-  const d = snap.exists() ? snap.data() : {};
-  const owned = d.ownedItems || [];
 
-  if (owned.includes(itemId)) return { ok: false, reason: "already-owned" };
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const owned = d.ownedItems || [];
 
-  const coins = d.coins || 0;
-  if (coins < cost) return { ok: false, reason: "not-enough-coins" };
+    if (owned.includes(itemId)) return { ok: false, reason: "already-owned" };
 
-  await setDoc(ref, {
-    coins: coins - cost,
-    ownedItems: [...owned, itemId],
-    activeMascot: itemId,
-  }, { merge: true });
+    const coins = d.coins || 0;
+    if (coins < cost) return { ok: false, reason: "not-enough-coins" };
 
-  return { ok: true };
+    tx.set(ref, {
+      coins: coins - cost,
+      ownedItems: [...owned, itemId],
+      activeMascot: itemId,
+    }, { merge: true });
+
+    return { ok: true };
+  });
 }
 
 // Switches the equipped mascot to an already-owned item (or back to "default").

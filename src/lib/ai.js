@@ -2,10 +2,19 @@
 // Talks to our own Vercel serverless function, never to OpenAI directly —
 // the key stays server-side (see api/openai-chat.js).
 
+import { auth } from "../firebase";
+
 export async function askFocuslyAI(messages, imageBase64 = null) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in to use the AI chat");
+  const idToken = await user.getIdToken();
+
   const resp = await fetch("/api/openai-chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
     body: JSON.stringify({ messages, imageBase64 }),
   });
   const data = await resp.json();
@@ -25,12 +34,17 @@ export function fileToDataURL(file) {
 }
 
 // Downscales + re-encodes a File to a JPEG data URL before it's ever sent
-// anywhere. Phone-camera photos are often 3000-4000px and several MB —
-// none of that extra resolution helps Telegram or the vision model, it
-// just makes the base64 payload huge and the request slow. Capping the
-// longest side at `maxDim` and using JPEG quality `quality` typically
-// takes a multi-MB photo down to a couple hundred KB.
-export function compressImage(file, { maxDim = 1280, quality = 0.75 } = {}) {
+// anywhere. Phone-camera photos are often 3000-4000px and several MB — none
+// of that extra resolution helps our storage or the vision model, it just
+// makes the upload slow and eats storage quota.
+//
+// Unlike a single-pass resize, this now GUARANTEES the output stays under
+// `maxBytes` (default 100KB) no matter how large the original photo was:
+// it starts at `quality`/`maxDim`, and if the result is still too big, it
+// keeps re-encoding at lower quality and then smaller dimensions until it
+// fits, or gives up after a bounded number of tries (so a pathological
+// image can't hang the browser forever).
+export function compressImage(file, { maxDim = 1280, quality = 0.75, maxBytes = 100 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -38,22 +52,50 @@ export function compressImage(file, { maxDim = 1280, quality = 0.75 } = {}) {
       const img = new Image();
       img.onerror = reject;
       img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          if (width >= height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
+        const dataUrlBytes = (dataUrl) => Math.round((dataUrl.length * 3) / 4); // base64 -> raw byte estimate
+
+        const renderAt = (dim, q) => {
+          let { width, height } = img;
+          if (width > dim || height > dim) {
+            if (width >= height) {
+              height = Math.round((height * dim) / width);
+              width = dim;
+            } else {
+              width = Math.round((width * dim) / height);
+              height = dim;
+            }
           }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+          return canvas.toDataURL("image/jpeg", q);
+        };
+
+        let dim = maxDim;
+        let q = quality;
+        let out = renderAt(dim, q);
+
+        // First bring quality down in steps (cheap: no re-resizing needed).
+        let tries = 0;
+        while (dataUrlBytes(out) > maxBytes && q > 0.35 && tries < 6) {
+          q -= 0.1;
+          out = renderAt(dim, q);
+          tries++;
         }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+
+        // If quality alone isn't enough, start shrinking dimensions too —
+        // this is what actually saves a very large/detailed source photo
+        // from staying above the cap.
+        tries = 0;
+        while (dataUrlBytes(out) > maxBytes && dim > 320 && tries < 8) {
+          dim = Math.round(dim * 0.8);
+          out = renderAt(dim, Math.max(q, 0.5));
+          tries++;
+        }
+
+        resolve(out);
       };
       img.src = reader.result;
     };
