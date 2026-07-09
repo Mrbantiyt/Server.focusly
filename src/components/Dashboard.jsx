@@ -53,7 +53,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
         </div>
         <div>
           <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Ask AI</div>
-          <div className="font-body text-xs" style={{ color: COL.sub }}>Gemini for notes, Google for search</div>
+          <div className="font-body text-xs" style={{ color: COL.sub }}>Chat, or attach a photo of your notes</div>
         </div>
       </button>
 

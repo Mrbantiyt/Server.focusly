@@ -463,7 +463,7 @@ function HowToUsePanel({ onBack }) {
     { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, today's task completion rate, and a 7-day bar chart." },
     { title: "Earn XP, coins, and streaks", body: "You earn XP for every 10 seconds you study, level up over time, and build a daily streak by opening the app and studying each day. Coins are paid out on level-up and can be spent in the Store." },
     { title: "Customize your look", body: "Buy mascots in the Store with coins, then pick your favorite as your app icon under Settings → Customize." },
-    { title: "Ask AI", body: "Use \"Ask AI\" on Home for quick help — it links out to Gemini for notes and Google for search." },
+    { title: "Ask AI", body: "Use \"Ask AI\" on Home to chat right inside the app — ask questions or attach a photo of your notes for an instant explanation." },
   ];
 
   return (
