@@ -1,6 +1,6 @@
 // src/components/StopwatchCard.jsx
 import React from "react";
-import { Play, Pause, Flame, RotateCcw } from "lucide-react";
+import { Play, Pause, RotateCcw, Flame } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHMS } from "../lib/time";
 
@@ -9,6 +9,8 @@ export function StopwatchCard({ seconds, running, onToggle, onReset }) {
   const R = 74, C = 2 * Math.PI * R;
   const gradId = "swGrad";
 
+  // Reset only zeroes the face (see useStopwatch.reset) — "Time today"
+  // keeps counting in the background either way.
   const handleReset = () => {
     if (seconds > 0 && !window.confirm("Reset the stopwatch face to 0:00:00? (Time today is unaffected.)")) return;
     onReset?.();
