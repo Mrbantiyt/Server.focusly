@@ -140,6 +140,8 @@ export default function App() {
                   streak={gameStats.streak}
                   level={gameStats.level}
                   todaySeconds={todaySeconds}
+                  history={history}
+                  dayKey={dayKey}
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
                   studyReminder={profileDoc?.studyReminder}
