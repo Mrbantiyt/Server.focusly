@@ -45,7 +45,7 @@ export default function App() {
   const history = useStudyHistory(user?.uid, 31);
   // Lifted up here (instead of living inside Tasks.jsx) so running-task
   // timers keep counting no matter which tab is open — see useTasks.js.
-  const tasks = useTasks(user?.uid);
+  const { tasks, toggleTaskRun } = useTasks(user?.uid);
   const gameStats = useGameStats(user?.uid, running);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
@@ -125,7 +125,7 @@ export default function App() {
                   tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey} />
               )}
               {tab === "chat" && <Chat />}
-              {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
+              {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} onToggleRun={toggleTaskRun} />}
               {tab === "cal" && (
                 <div className="flex flex-col gap-6">
                   <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
