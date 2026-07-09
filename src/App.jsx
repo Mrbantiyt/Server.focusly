@@ -21,6 +21,7 @@ import StatusBar from "./components/StatusBar";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
 import Store, { STORE_ITEMS } from "./components/Store";
+import { AppLoadingSkeleton } from "./components/Skeleton";
 
 const FONT = (
   <style>{`
@@ -97,7 +98,7 @@ export default function App() {
         style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", background: COL.bg }}>
 
         {loading ? (
-          <div className="flex-1 flex items-center justify-center font-body text-sm" style={{ color: COL.sub }}>Loading…</div>
+          <AppLoadingSkeleton />
         ) : !user ? (
           <Login
             onSignupWithEmail={signupWithEmail}

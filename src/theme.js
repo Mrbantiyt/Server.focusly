@@ -2,7 +2,7 @@
 export const COL = {
   bg: "#15151C", card: "#1C1C26", ink: "#F2F2F7", sub: "#8C8CA1",
   violet: "#7B6EF6", violetDeep: "#5C4CE0", blue: "#5AA7FF",
-  mint: "#3FCFA3", coral: "#FF7A85",
+  mint: "#3FCFA3", coral: "#FF7A85", gold: "#FFB648",
   track: "#2A2A38", border: "#33333F", input: "#22222E",
 };
 
