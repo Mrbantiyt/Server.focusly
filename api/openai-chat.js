@@ -88,7 +88,7 @@ export default async function handler(req, res) {
           },
           ...openaiMessages,
         ],
-        max_tokens: 15740,
+        max_tokens: 2000,
       }),
     });
 
