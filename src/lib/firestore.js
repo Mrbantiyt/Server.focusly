@@ -458,7 +458,18 @@ export async function isUsernameAvailable(username) {
 // Atomically claims `username` for `uid`, releasing any username the user
 // previously held. Throws if the username is invalid or already taken by
 // someone else.
-export async function claimUsername(uid, username, email) {
+//
+// SECURITY: the usernames/{key} doc only ever stores { uid } now — no
+// email. It used to also store email because username-login needed to
+// look email up BEFORE the user was authenticated, and this doc is the
+// only one readable pre-auth — but that meant the doc had to be public,
+// so anyone could enumerate usernames and harvest emails. That lookup now
+// goes through api/resolve-username.js (Admin SDK, server-side) instead,
+// which reads email from the private users/{uid} doc. `email` is still
+// accepted as a param here for backwards compatibility with callers, but
+// is intentionally ignored/unused — email is written to users/{uid} by
+// ensureUserProfile, not here.
+export async function claimUsername(uid, username, _email) {
   const trimmed = (username || "").trim().replace(/^@/, "");
   if (!isValidUsername(trimmed)) {
     throw new Error("Username must be 3-20 characters: letters, numbers, _ or . only.");
@@ -481,10 +492,7 @@ export async function claimUsername(uid, username, email) {
       tx.delete(prevRef);
     }
 
-    // Email is duplicated onto the usernames doc (not just users/{uid})
-    // because username-login looks this doc up BEFORE the user is
-    // authenticated, and users/{uid} is only readable once signed in.
-    tx.set(usernameRef, { uid, email: email || null }, { merge: true });
+    tx.set(usernameRef, { uid }, { merge: true });
     tx.set(userRef, { username: trimmed, usernameLower: key }, { merge: true });
   });
 
@@ -494,38 +502,31 @@ export async function claimUsername(uid, username, email) {
 // Looks up the email associated with a username, so users can log in with
 // either their username or their email (Firebase Auth itself only accepts
 // email + password).
+//
+// SECURITY: this now calls a server endpoint (Admin SDK) instead of reading
+// Firestore directly — the public usernames/{key} doc no longer stores
+// email, so there's nothing to read here client-side.
 export async function getEmailForUsername(username) {
-  const key = normalizeUsername(username);
-  const ref = doc(db, "usernames", key);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
-  return snap.data().email || null;
+  try {
+    const resp = await fetch("/api/resolve-username", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.email || null;
+  } catch {
+    return null;
+  }
 }
 
-// Self-heal: older versions of the app could reserve a username with a
-// missing/null email (e.g. changing username from Settings without also
-// updating the usernames/{key} doc), which silently breaks username-login
-// forever since getEmailForUsername() has nothing to return. Called after
-// every successful sign-in with a trusted (uid, email) pair, so it only
-// ever repairs the CURRENT user's own reservation — never touches anyone
-// else's doc. No-ops if the doc is already correct.
-export async function repairUsernameEmail(uid, email) {
-  if (!uid || !email) return;
-  try {
-    const userRef = doc(db, "users", uid);
-    const userSnap = await getDoc(userRef);
-    const usernameLower = userSnap.exists() ? userSnap.data().usernameLower : null;
-    if (!usernameLower) return;
-
-    const usernameRef = doc(db, "usernames", usernameLower);
-    const usernameSnap = await getDoc(usernameRef);
-    if (!usernameSnap.exists()) return;
-
-    const data = usernameSnap.data();
-    if (data.uid === uid && data.email !== email) {
-      await setDoc(usernameRef, { uid, email }, { merge: true });
-    }
-  } catch {
-    // Best-effort repair — never block sign-in over this.
-  }
+// Legacy self-heal, now a no-op: older versions of the app could reserve a
+// username with a missing/null email directly on the usernames/{key} doc.
+// That doc no longer stores email at all (see claimUsername above), so
+// there's nothing left to repair — email always comes from users/{uid}.
+// Kept as a no-op export so existing call sites (useAuth.js) don't need
+// to change.
+export async function repairUsernameEmail(_uid, _email) {
+  return;
 }
