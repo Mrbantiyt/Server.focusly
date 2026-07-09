@@ -65,7 +65,7 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
     if (!trimmed || trimmed === user.username) { setEditingUsername(false); return; }
     setUsernameBusy(true);
     try {
-      await claimUsername(user.uid, trimmed);
+      await claimUsername(user.uid, trimmed, user.email);
       setEditingUsername(false);
     } catch (e) {
       setUsernameError(e.message || "Couldn't update username.");

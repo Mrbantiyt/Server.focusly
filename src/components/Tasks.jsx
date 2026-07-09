@@ -11,22 +11,14 @@ const TAG_COLOR = { High: COL.coral, Medium: COL.blue, Low: COL.mint };
 // `tasks` is passed down from App.jsx (via the useTasks hook), which keeps
 // ticking a running task's elapsed time even while this tab isn't open —
 // see src/hooks/useTasks.js for why that used to break.
-export default function Tasks({ uid, tasks }) {
+//
+// `onToggleRun` is also from useTasks — it updates local state immediately
+// (not just Firestore), so Play/Pause never waits on a network round-trip
+// to visibly start/stop the timer.
+export default function Tasks({ uid, tasks, onToggleRun }) {
   const [draft, setDraft] = useState("");
   const [openId, setOpenId] = useState(null);
 
-  // `t.elapsed` here is already the LIVE value (see useTasks.js's liveTasks
-  // mapping) — it already includes time elapsed since `startedAt`. So on
-  // pause we just bank it as-is; we must NOT add (Date.now() - startedAt)
-  // again on top, or the current run gets counted twice.
-  const toggleRun = (t) => {
-    if (t.running) {
-      const finalElapsed = Math.floor(t.elapsed || 0);
-      updateTask(uid, t.id, { running: false, startedAt: null, elapsed: finalElapsed });
-    } else {
-      updateTask(uid, t.id, { running: true, startedAt: Date.now() });
-    }
-  };
   const toggleManualDone = (t) => {
     // only used for tasks with no goals — goal-based tasks auto-complete
     if ((t.goals || []).length > 0) return;
@@ -59,7 +51,7 @@ export default function Tasks({ uid, tasks }) {
             task={t}
             open={openId === t.id}
             onToggleOpen={() => setOpenId((id) => (id === t.id ? null : t.id))}
-            onToggleRun={() => toggleRun(t)}
+            onToggleRun={() => onToggleRun(t)}
             onToggleManualDone={() => toggleManualDone(t)}
             onRemove={() => remove(t.id)}
           />
