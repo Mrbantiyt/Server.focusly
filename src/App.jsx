@@ -135,6 +135,7 @@ export default function App() {
                 <Settings
                   user={profile}
                   tasks={tasks}
+                  taskStats={gameStats.taskStats}
                   coins={gameStats.coins}
                   streak={gameStats.streak}
                   level={gameStats.level}
