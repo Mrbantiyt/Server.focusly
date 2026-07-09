@@ -121,7 +121,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               {tab === "home" && (
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
-                  tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} />
+                  tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey} />
               )}
               {tab === "chat" && <Chat />}
               {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
