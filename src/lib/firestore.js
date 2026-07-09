@@ -5,6 +5,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { deleteMediaFiles } from "./media";
+import { dayKeyFor } from "./time";
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
 
@@ -161,10 +162,29 @@ export async function runMidnightTaskReset(uid, todayKey) {
   const snap = await getDocs(tasksRef);
   if (snap.empty) return;
 
+  // Safety net: only ever delete tasks actually created on a PREVIOUS day.
+  // The `lastResetDay` guard above should already stop this from running
+  // twice in one day, but it depends on the device clock and a network
+  // round-trip — if it ever misfires (clock skew, a stale/missing
+  // taskStats doc, etc.) this check is what stops a task you just made
+  // today from being wiped out. `dayKeyFor` builds a local YYYY-MM-DD key
+  // the same way the reset's own `todayKey` is built, so the comparison is
+  // apples-to-apples.
+  const docsToWipe = snap.docs.filter((d) => {
+    const t = d.data();
+    const createdMs = t.createdAt?.toMillis ? t.createdAt.toMillis() : null;
+    // No createdAt yet (e.g. serverTimestamp hasn't resolved locally) —
+    // treat as "created today" and leave it alone rather than risk
+    // deleting a task that was just added.
+    if (createdMs == null) return false;
+    return dayKeyFor(new Date(createdMs)) !== todayKey;
+  });
+  if (docsToWipe.length === 0) return;
+
   let completedCount = 0;
   let goalsCompletedCount = 0;
   const photoPaths = [];
-  for (const d of snap.docs) {
+  for (const d of docsToWipe) {
     const t = d.data();
     if (t.done) completedCount++;
     const goals = t.goals || [];
@@ -183,10 +203,9 @@ export async function runMidnightTaskReset(uid, todayKey) {
   // ...then delete every task doc. Firestore batches cap at 500 writes,
   // which is far more than a daily task list will ever hold, but chunking
   // here means it stays correct even for an unusually large list.
-  const docs = snap.docs;
-  for (let i = 0; i < docs.length; i += 450) {
+  for (let i = 0; i < docsToWipe.length; i += 450) {
     const batch = writeBatch(db);
-    for (const d of docs.slice(i, i + 450)) batch.delete(d.ref);
+    for (const d of docsToWipe.slice(i, i + 450)) batch.delete(d.ref);
     await batch.commit();
   }
 
