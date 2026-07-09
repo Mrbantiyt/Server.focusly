@@ -15,7 +15,7 @@ import { requireAuth } from "./_lib/verifyAuth.js";
 
 // Any OpenRouter model that supports vision (image input) works here.
 // See https://openrouter.ai/models for the full list / pricing.
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.5-flash";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
