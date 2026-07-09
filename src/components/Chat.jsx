@@ -174,7 +174,12 @@ export default function Chat({ user }) {
               <button
                 onClick={() => setShowDeleteModal(false)}
                 disabled={deleting}
-                style={neu(false, 14)}
+                style={{
+                  borderRadius: 14,
+                  background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+                  boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+                  color: "#FFFFFF",
+                }}
                 className="flex-1 font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-50"
               >
                 Cancel
