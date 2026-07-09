@@ -4,11 +4,24 @@
 // environment variables (Project Settings -> Environment Variables ->
 // OPENAI_API_KEY) and is never sent to the browser.
 //
+// SECURITY: requires a valid Firebase ID token — previously this endpoint
+// had no auth check at all, meaning anyone who found the URL could call it
+// directly and run up the OpenAI bill with no login required.
+//
 // Request body: { messages: [{role, content}], imageBase64?: "data:image/..."  }
+// Header:       Authorization: Bearer <firebaseIdToken>
+
+import { requireAuth } from "./_lib/verifyAuth.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  try {
+    await requireAuth(req);
+  } catch (err) {
+    return res.status(err.statusCode || 401).json({ error: err.message });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
@@ -19,6 +32,15 @@ export default async function handler(req, res) {
   const { messages = [], imageBase64 } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages[] required" });
+  }
+
+  // Reject any client-supplied "system" role message — without this, a
+  // malicious client could inject a fake system message to try to override
+  // the real system prompt below. Only user/assistant turns are legitimate
+  // coming from the client.
+  const hasClientSystemMsg = messages.some((m) => m.role === "system");
+  if (hasClientSystemMsg) {
+    return res.status(400).json({ error: "system-role messages are not allowed from the client" });
   }
 
   // Build the OpenAI-format message list. If an image is attached, turn the
