@@ -530,3 +530,25 @@ export async function getEmailForUsername(username) {
 export async function repairUsernameEmail(_uid, _email) {
   return;
 }
+
+/* ------------------------------- Ask AI chat ------------------------------------ */
+
+// Single doc holds the whole "Ask AI" conversation for a user:
+// users/{uid}/aiChat/session = { messages: [{ role, content, imagePreview }], updatedAt }
+// A single doc (rather than one-doc-per-message) is enough for a chat this
+// size and keeps loading/saving/clearing a single round trip.
+export async function getAiChat(uid) {
+  const ref = doc(db, "users", uid, "aiChat", "session");
+  const snap = await getDoc(ref);
+  return snap.exists() ? (snap.data().messages || []) : null;
+}
+
+export async function saveAiChat(uid, messages) {
+  const ref = doc(db, "users", uid, "aiChat", "session");
+  await setDoc(ref, { messages, updatedAt: serverTimestamp() });
+}
+
+export async function clearAiChat(uid) {
+  const ref = doc(db, "users", uid, "aiChat", "session");
+  await deleteDoc(ref);
+}
