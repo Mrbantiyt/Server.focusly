@@ -1,17 +1,21 @@
 // api/openai-chat.js
 //
-// Server-side proxy to OpenAI. The API key lives ONLY in Vercel's
-// environment variables (Project Settings -> Environment Variables ->
-// OPENAI_API_KEY) and is never sent to the browser.
+// Server-side proxy to OpenRouter (https://openrouter.ai). The API key lives
+// ONLY in Vercel's environment variables (Project Settings -> Environment
+// Variables -> OPENROUTER_API_KEY) and is never sent to the browser.
 //
 // SECURITY: requires a valid Firebase ID token — previously this endpoint
 // had no auth check at all, meaning anyone who found the URL could call it
-// directly and run up the OpenAI bill with no login required.
+// directly and run up the bill with no login required.
 //
 // Request body: { messages: [{role, content}], imageBase64?: "data:image/..."  }
 // Header:       Authorization: Bearer <firebaseIdToken>
 
 import { requireAuth } from "./_lib/verifyAuth.js";
+
+// Any OpenRouter model that supports vision (image input) works here.
+// See https://openrouter.ai/models for the full list / pricing.
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -24,9 +28,9 @@ export default async function handler(req, res) {
     return res.status(err.statusCode || 401).json({ error: err.message });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "OPENAI_API_KEY not configured on server" });
+    return res.status(500).json({ error: "OPENROUTER_API_KEY not configured on server" });
   }
 
   const { messages = [], imageBase64 } = req.body || {};
@@ -60,14 +64,19 @@ export default async function handler(req, res) {
   });
 
   try {
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
+        // OpenRouter asks for these two so it can attribute traffic to your
+        // app on https://openrouter.ai/rankings — not strictly required,
+        // but good practice and sometimes needed for free-tier rate limits.
+        "HTTP-Referer": process.env.PUBLIC_APP_URL || "https://focusly.app",
+        "X-Title": "Focusly AI",
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: OPENROUTER_MODEL,
         messages: [
           {
             role: "system",
@@ -85,7 +94,7 @@ export default async function handler(req, res) {
 
     const data = await resp.json();
     if (!resp.ok) {
-      return res.status(resp.status).json({ error: data.error?.message || "OpenAI error" });
+      return res.status(resp.status).json({ error: data.error?.message || "OpenRouter error" });
     }
 
     const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a reply.";
