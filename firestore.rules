@@ -13,6 +13,14 @@ service cloud.firestore {
       match /aiChat/{docId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
+      // Sent by the admin panel via the Admin SDK (bypasses these rules
+      // entirely for that write). Client-side, a user may only read their
+      // own notifications and update/delete them (marking read, claiming
+      // a reward, deleting) — never create one for themselves.
+      match /notifications/{notifId} {
+        allow read, update, delete: if request.auth != null && request.auth.uid == uid;
+        allow create: if false;
+      }
     }
 
     // usernames/{usernameLower} = { uid }
