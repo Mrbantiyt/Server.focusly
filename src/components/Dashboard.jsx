@@ -14,7 +14,7 @@ function getGreeting() {
   return "Good night";
 }
 
-export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout, history, dayKey }) {
+export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications }) {
   const doneCount = tasks.filter((t) => t.done).length;
   const name = user.displayName || "Student";
   const greeting = getGreeting();
@@ -35,7 +35,17 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button style={neu(false, 999)} className="w-10 h-10 flex items-center justify-center"><Bell size={16} color={COL.sub} /></button>
+          <button onClick={onOpenNotifications} style={neu(false, 999)} className="relative w-10 h-10 flex items-center justify-center">
+            <Bell size={16} color={COL.sub} />
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                style={{ background: COL.coral }}
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
           <button onClick={onLogout} style={neu(false, 999)} className="w-10 h-10 flex items-center justify-center"><LogOut size={15} color={COL.sub} /></button>
         </div>
       </div>
