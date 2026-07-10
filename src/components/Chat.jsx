@@ -189,7 +189,7 @@ export default function Chat({ user }) {
     if (!user?.uid || !pendingNote || savingNote) return;
     setSavingNote(true);
     try {
-      await addNote(user.uid, pendingNote.noteText);
+      await addNote(user.uid, pendingNote.noteText, pendingNote.heading);
       finishSavingNote();
     } catch (err) {
       console.error("Failed to save to notes:", err);
@@ -205,7 +205,7 @@ export default function Chat({ user }) {
     setSavingNote(true);
     try {
       const merged = [note.text, pendingNote.noteText].filter(Boolean).join("\n\n");
-      await updateNote(user.uid, note.id, merged);
+      await updateNote(user.uid, note.id, { text: merged });
       finishSavingNote();
     } catch (err) {
       console.error("Failed to save to notes:", err);
@@ -446,9 +446,11 @@ export default function Chat({ user }) {
                     onClick={() => setNoteTargetStep("pickExisting")}
                     disabled={savingNote || existingNotes.length === 0}
                     style={neu(false, 14)}
-                    className="font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-50"
+                    className="font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-70"
                   >
-                    {existingNotes.length === 0 ? "No existing notes" : "Add to existing note"}
+                    <span style={{ color: existingNotes.length === 0 ? COL.gold : COL.ink }}>
+                      {existingNotes.length === 0 ? "No existing notes" : "Add to existing note"}
+                    </span>
                   </button>
                   <button
                     onClick={closeNoteTargetModal}
@@ -469,7 +471,7 @@ export default function Chat({ user }) {
                 </div>
                 <div className="flex flex-col gap-2 max-h-64 overflow-y-auto mb-2">
                   {existingNotes.map((note) => {
-                    const snippet = (note.text || "").trim().split("\n")[0] || "Empty note";
+                    const snippet = note.title?.trim() || (note.text || "").trim().split("\n")[0] || "Empty note";
                     return (
                       <button
                         key={note.id}

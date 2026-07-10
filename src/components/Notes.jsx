@@ -70,34 +70,51 @@ export default function Notes({ uid, notes }) {
       </div>
 
       <div className="flex flex-col gap-3">
-        {notes.map((n) => (
-          <button
-            key={n.id}
-            onClick={() => setOpenId(n.id)}
-            style={neu(false, 18)}
-            className="p-3.5 flex items-start gap-3 text-left active:scale-[0.98] transition"
-          >
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
-              <StickyNote size={14} color={COL.violet} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div
-                className="font-body text-sm whitespace-pre-wrap line-clamp-2"
-                style={{ color: n.text ? COL.ink : COL.sub }}
-              >
-                {n.text?.trim() ? n.text : "Empty note"}
-              </div>
-              <div className="font-body text-[11px] mt-1" style={{ color: COL.sub }}>{formatWhen(n.updatedAt)}</div>
-            </div>
+        {notes.map((n) => {
+          const heading = n.title?.trim() || n.text?.trim()?.split("\n")[0] || "";
+          // When there's no explicit title, the first line of the body is
+          // already shown as the heading, so the preview below skips it to
+          // avoid repeating the same line twice.
+          const preview = n.title?.trim()
+            ? n.text?.trim() || ""
+            : n.text?.trim()?.split("\n").slice(1).join("\n").trim() || "";
+          return (
             <button
-              onClick={(e) => { e.stopPropagation(); handleDelete(n.id); }}
-              className="flex-shrink-0 p-1"
-              aria-label="Delete note"
+              key={n.id}
+              onClick={() => setOpenId(n.id)}
+              style={neu(false, 18)}
+              className="p-3.5 flex items-start gap-3 text-left active:scale-[0.98] transition"
             >
-              <Trash2 size={15} color={COL.sub} />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
+                <StickyNote size={14} color={COL.violet} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div
+                  className="font-body text-sm font-semibold truncate"
+                  style={{ color: heading ? COL.ink : COL.sub }}
+                >
+                  {heading || "Empty note"}
+                </div>
+                {preview && (
+                  <div
+                    className="font-body text-xs whitespace-pre-wrap line-clamp-2 mt-0.5"
+                    style={{ color: COL.sub }}
+                  >
+                    {preview}
+                  </div>
+                )}
+                <div className="font-body text-[11px] mt-1" style={{ color: COL.sub }}>{formatWhen(n.updatedAt)}</div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDelete(n.id); }}
+                className="flex-shrink-0 p-1"
+                aria-label="Delete note"
+              >
+                <Trash2 size={15} color={COL.sub} />
+              </button>
             </button>
-          </button>
-        ))}
+          );
+        })}
 
         {notes.length === 0 && (
           <div className="font-body text-sm text-center py-8" style={{ color: COL.sub }}>
@@ -122,10 +139,14 @@ function NoteEditor({ uid, note, onBack, onDelete }) {
   // Local-first: typing only ever touches this state, so it's always
   // instant regardless of network speed. The Firestore write is debounced
   // in the background and also flushed immediately on the way out.
+  const [title, setTitle] = useState(note.title || "");
   const [text, setText] = useState(note.text || "");
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const textRef = useRef(text);
   textRef.current = text;
   const saveTimer = useRef(null);
+  const titleInputRef = useRef(null);
   const taRef = useRef(null);
 
   // If a remote edit comes in for the SAME note (e.g. edited on another
@@ -133,19 +154,32 @@ function NoteEditor({ uid, note, onBack, onDelete }) {
   // what the user is actively typing right now.
   useEffect(() => {
     if (document.activeElement !== taRef.current) setText(note.text || "");
+    if (document.activeElement !== titleInputRef.current) setTitle(note.title || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note.id, note.text]);
+  }, [note.id, note.text, note.title]);
 
   const flush = () => {
     clearTimeout(saveTimer.current);
-    updateNote(uid, note.id, textRef.current);
+    updateNote(uid, note.id, { title: titleRef.current, text: textRef.current });
+  };
+
+  const scheduleSave = () => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(
+      () => updateNote(uid, note.id, { title: titleRef.current, text: textRef.current }),
+      SAVE_DEBOUNCE_MS
+    );
+  };
+
+  const handleTitleChange = (e) => {
+    setTitle(e.target.value); // no maxLength — same as the body
+    scheduleSave();
   };
 
   const handleChange = (e) => {
     const value = e.target.value; // no maxLength anywhere — notes can be as long as you like
     setText(value);
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => updateNote(uid, note.id, value), SAVE_DEBOUNCE_MS);
+    scheduleSave();
   };
 
   // Flush on unmount (navigating back) and when the tab/app is hidden/closed.
@@ -173,12 +207,22 @@ function NoteEditor({ uid, note, onBack, onDelete }) {
         </button>
       </div>
 
+      <input
+        ref={titleInputRef}
+        value={title}
+        onChange={handleTitleChange}
+        placeholder="Title"
+        autoFocus={!note.title && !note.text}
+        className="font-display font-semibold text-lg outline-none bg-transparent"
+        style={{ color: COL.ink }}
+      />
+      <div style={{ height: 1, background: COL.border }} />
+
       <textarea
         ref={taRef}
         value={text}
         onChange={handleChange}
         placeholder="Start typing…"
-        autoFocus
         // No `maxLength` prop and no client-side length check anywhere in
         // this file — a note can grow as large as you want to type.
         style={{ color: COL.ink, resize: "none" }}
