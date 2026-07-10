@@ -103,7 +103,7 @@ export default async function handler(req, res) {
           },
           ...openaiMessages,
         ],
-        max_tokens: 2000,
+        max_tokens: 3000,
       }),
     });
 
