@@ -8,7 +8,7 @@
 // had no auth check at all, meaning anyone who found the URL could call it
 // directly and run up the bill with no login required.
 //
-// Request body: { messages: [{role, content}], imageBase64?: "data:image/..."  }
+// Request body: { messages: [{role, content}], imagesBase64?: ["data:image/...", ...] }
 // Header:       Authorization: Bearer <firebaseIdToken>
 
 import { requireAuth } from "./_lib/verifyAuth.js";
@@ -33,7 +33,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "OPENROUTER_API_KEY not configured on server" });
   }
 
-  const { messages = [], imageBase64 } = req.body || {};
+  // Back-compat: accept the old singular `imageBase64` too, but the client
+  // now sends `imagesBase64` (an array) so multiple photos can be attached
+  // to one message.
+  const { messages = [], imagesBase64, imageBase64 } = req.body || {};
+  const images = (Array.isArray(imagesBase64) ? imagesBase64 : imageBase64 ? [imageBase64] : []).filter(Boolean);
+
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages[] required" });
   }
@@ -47,16 +52,26 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "system-role messages are not allowed from the client" });
   }
 
-  // Build the OpenAI-format message list. If an image is attached, turn the
-  // last user message into a multi-part content array (text + image_url).
+  // Build the OpenAI-format message list. If image(s) are attached, turn the
+  // last user message into a multi-part content array (text + one
+  // image_url part per photo).
+  //
+  // When the user attached photo(s) but typed no question, we deliberately
+  // do NOT put words in their mouth (no more auto "What is in this image?
+  // Explain it clearly."). Instead we tell the model to look at the
+  // photo(s) and ask the user what they'd like help with — mirroring what
+  // a human tutor would do if someone silently handed over a page of notes.
   const openaiMessages = messages.map((m, i) => {
     const isLastUser = i === messages.length - 1 && m.role === "user";
-    if (isLastUser && imageBase64) {
+    if (isLastUser && images.length > 0) {
+      const text = m.content?.trim()
+        ? m.content
+        : "I attached photo(s) without asking anything yet. Look at what's in the photo(s), then ask me what I'd like help with (e.g. explain it, solve a specific question, summarize it) instead of assuming.";
       return {
         role: "user",
         content: [
-          { type: "text", text: m.content || "What is in this image? Explain it clearly." },
-          { type: "image_url", image_url: { url: imageBase64 } },
+          { type: "text", text },
+          ...images.map((url) => ({ type: "image_url", image_url: { url } })),
         ],
       };
     }
