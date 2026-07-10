@@ -1,11 +1,11 @@
 // src/App.jsx
 import React, { useEffect, useState } from "react";
-import { Home, MessageSquare, CheckSquare, CalendarDays, Settings as SettingsIcon } from "lucide-react";
+import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useStopwatch } from "./hooks/useStopwatch";
 import { useStudyHistory } from "./hooks/useStudyHistory";
-import { useTasks } from "./hooks/useTasks";
+import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
 import { useNotifications } from "./hooks/useNotifications";
 import { watchUserProfile } from "./lib/firestore";
@@ -15,7 +15,7 @@ import { syncPushSubscription, isMedianApp } from "./lib/median";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
 import Chat from "./components/Chat";
-import Tasks from "./components/Tasks";
+import Notes from "./components/Notes";
 import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
 import Settings from "./components/Settings";
@@ -36,19 +36,28 @@ const FONT = (
 const NAV = [
   { id: "home", icon: Home },
   { id: "chat", icon: MessageSquare },
-  { id: "tasks", icon: CheckSquare },
+  { id: "notes", icon: StickyNote },
   { id: "cal", icon: CalendarDays },
   { id: "settings", icon: SettingsIcon },
 ];
+
+// Stable reference (not a fresh [] every render) — see comment where it's
+// used below.
+const EMPTY_TASKS = [];
 
 export default function App() {
   const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
-  // Task list stays lifted up here (rather than inside Tasks.jsx) since
-  // App.jsx is what stays mounted across tab switches.
-  const { tasks } = useTasks(user?.uid);
+  // Tasks tab was removed and replaced by Notes. `tasks` is kept as a
+  // stable empty array (not lifted from a hook anymore) purely so the
+  // existing Dashboard/Settings stat panels — which still read a `tasks`
+  // array for their lifetime "goals completed" counters — don't need a
+  // separate prop-shape change. Live task tracking (and its once-a-second
+  // re-render tick) is gone for good, which is also a real perf win.
+  const tasks = EMPTY_TASKS;
+  const { notes } = useNotes(user?.uid);
   const gameStats = useGameStats(user?.uid, running);
   const { notifications, unreadCount } = useNotifications(user?.uid);
   const [showLevel, setShowLevel] = useState(false);
@@ -127,7 +136,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               {tab === "home" && (
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
-                  tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
+                  tasks={tasks} notesCount={notes.length} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
                   unreadCount={unreadCount}
                   onOpenNotifications={() => {
                     setShowNotifications(true);
@@ -135,8 +144,19 @@ export default function App() {
                   }}
                 />
               )}
-              {tab === "chat" && <Chat user={user} />}
-              {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
+              {/*
+                Chat stays mounted at all times (just hidden via CSS when
+                another tab is active) instead of being conditionally
+                rendered. Previously, switching tabs while the AI was still
+                "Thinking…" unmounted Chat entirely — the in-flight request's
+                result (and the thinking indicator) was then thrown away, so
+                coming back to the chat tab never showed the answer.
+              */}
+              <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
+                <Chat user={user} />
+              </div>
+
+              {tab === "notes" && <Notes uid={user.uid} notes={notes} />}
               {tab === "cal" && (
                 <div className="flex flex-col gap-6">
                   <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
