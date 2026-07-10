@@ -128,6 +128,56 @@ export function DashboardSkeleton() {
   );
 }
 
+// Mirrors a chat bubble row (used a few times below, once per "side").
+function ChatBubbleSkeleton({ align = "start", w = 200 }) {
+  return (
+    <div className={`flex ${align === "end" ? "justify-end" : "justify-start"}`}>
+      <div style={neu(align === "end", 16)} className="px-3 py-2.5">
+        <Bone w={w} h={12} r={5} style={{ marginBottom: 8 }} />
+        <Bone w={w * 0.65} h={12} r={5} />
+      </div>
+    </div>
+  );
+}
+
+// Shown inside the AI chat while the saved conversation is being fetched
+// from Firestore, so the screen doesn't flash an empty "welcome" bubble
+// and then pop in the real history a moment later.
+export function ChatSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 py-2">
+      <style>{`
+        .skeleton-shimmer {
+          position: relative;
+          overflow: hidden;
+        }
+        .skeleton-shimmer::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          transform: translateX(-100%);
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(242,242,247,0.06),
+            transparent
+          );
+          animation: skeleton-sweep 1.4s ease-in-out infinite;
+        }
+        @keyframes skeleton-sweep {
+          100% { transform: translateX(100%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .skeleton-shimmer::after { animation: none; }
+        }
+      `}</style>
+      <ChatBubbleSkeleton align="start" w={220} />
+      <ChatBubbleSkeleton align="end" w={140} />
+      <ChatBubbleSkeleton align="start" w={190} />
+    </div>
+  );
+}
+
 // Small full-screen variant for the very first paint (before we even know
 // if there's a logged-in user), used in place of the plain "Loading…" text.
 export function AppLoadingSkeleton() {

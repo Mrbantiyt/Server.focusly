@@ -456,8 +456,7 @@ function HowToUsePanel({ onBack }) {
   const steps = [
     { title: "Start the Study Stopwatch", body: "On the Home tab, hit play on the Study Stopwatch whenever you sit down to study. It keeps running in the background even if you switch tabs, and adds straight to your \"Time today\"." },
     { title: "Reset just resets the face", body: "Tapping reset only zeroes the stopwatch's own display for a fresh session — it never removes time you've already banked for the day." },
-    { title: "Add tasks and goals", body: "On the Tasks tab, add what you're working on. Tasks with goals auto-complete once every goal is checked off; simple tasks can be marked done manually." },
-    { title: "Run a task's own timer", body: "Each task has its own play/pause timer so you can track how long you spend on that specific task, separate from the main stopwatch." },
+    { title: "Add notes", body: "On the Notes tab, tap \"New note\" to jot anything down — no character limit, so a note can be as short or as long as you need." },
     { title: "Check your Calendar", body: "The Calendar tab shows how many hours you studied on each day, plus a 7-day / 1-month progress chart." },
     { title: "See your stats in Your data", body: "Settings → Your data shows today's time, total study time, today's tasks, goals completed, coins, streak, and level, all in one place." },
     { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, today's task completion rate, and a 7-day bar chart." },

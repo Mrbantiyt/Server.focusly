@@ -10,10 +10,15 @@
 //    user can ask a question about it ("explain this", "what's the
 //    answer to Q3", etc).
 import React, { useEffect, useRef, useState } from "react";
-import { Sparkles, Send, Image as ImageIcon, X, Trash2 } from "lucide-react";
+import { Sparkles, Send, Image as ImageIcon, X, Trash2, NotebookPen, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { askFocuslyAI, fileToDataURL, compressImage } from "../lib/ai";
-import { getAiChat, saveAiChat, clearAiChat } from "../lib/firestore";
+import { getAiChat, saveAiChat, clearAiChat, addNote } from "../lib/firestore";
+import { ChatSkeleton } from "./Skeleton";
+
+// Max photos attachable to a single message — keeps payload size and the
+// vision request sane while still covering "two pages of the same notes".
+const MAX_IMAGES = 4;
 
 const WELCOME_MSG = { role: "assistant", content: "Hey! I'm Focusly AI. Ask me anything, or attach a photo of your notes and I'll help explain it." };
 
@@ -22,11 +27,18 @@ export default function Chat({ user }) {
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [input, setInput] = useState("");
-  const [pendingImage, setPendingImage] = useState(null); // { dataUrl, previewUrl }
+  const [pendingImages, setPendingImages] = useState([]); // [{ dataUrl }]
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // "Add to notes": tap the button, tap one or more messages to select them
+  // (multi-select), then tap "Save" — this copies the selected message(s)
+  // into a brand-new note (auto-titled) on the Notes tab.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [savingNote, setSavingNote] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
 
@@ -73,47 +85,116 @@ export default function Chat({ user }) {
     setShowDeleteModal(false);
   };
 
+  const enterSelectMode = () => {
+    setSelectMode(true);
+    setSelectedIds(new Set());
+  };
+
+  const cancelSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelected = (idx) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  // Copies the selected message(s) into ONE new note, auto-titled from the
+  // first selected message, in the same order they appear in the chat.
+  const saveSelectedToNotes = async () => {
+    if (!user?.uid || selectedIds.size === 0 || savingNote) return;
+    setSavingNote(true);
+    try {
+      const selected = messages
+        .map((m, i) => ({ ...m, _i: i }))
+        .filter((m) => selectedIds.has(m._i));
+
+      // Auto-generate a heading from the first selected message so the note
+      // shows up in the Notes list with something recognizable, instead of
+      // just "Empty note".
+      const titleSource = (selected.find((m) => m.content?.trim())?.content || "Ask AI").trim();
+      const heading = titleSource.length > 60 ? titleSource.slice(0, 60).trimEnd() + "…" : titleSource;
+
+      const body = selected
+        .map((m) => `${m.role === "user" ? "You" : "Focusly AI"}: ${m.content || "(photo)"}`)
+        .join("\n\n");
+
+      const noteText = `${heading}\n\n${body}`;
+      await addNote(user.uid, noteText);
+
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 2200);
+      cancelSelectMode();
+    } catch (err) {
+      console.error("Failed to save to notes:", err);
+      setError("Couldn't save to Notes — try again.");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   const handlePickImage = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow picking the same file again later
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    e.target.value = ""; // allow picking the same file(s) again later
+    if (files.length === 0) return;
     setError("");
+
+    const room = MAX_IMAGES - pendingImages.length;
+    if (room <= 0) {
+      setError(`You can attach up to ${MAX_IMAGES} photos at once.`);
+      return;
+    }
+    const toProcess = files.slice(0, room);
+    if (files.length > toProcess.length) {
+      setError(`You can attach up to ${MAX_IMAGES} photos at once — added the first ${toProcess.length}.`);
+    }
+
     try {
-      // Compressed copy is what actually gets sent to the model/stored.
-      const compressedDataUrl = await compressImage(file, { maxDim: 1280, quality: 0.75, maxBytes: 350 * 1024 });
-      setPendingImage({ dataUrl: compressedDataUrl });
+      // Compressed copies are what actually get sent to the model/stored.
+      const compressed = await Promise.all(
+        toProcess.map((file) => compressImage(file, { maxDim: 1280, quality: 0.75, maxBytes: 350 * 1024 }))
+      );
+      setPendingImages((prev) => [...prev, ...compressed.map((dataUrl) => ({ dataUrl }))]);
     } catch (err) {
       console.error(err);
       setError("Couldn't read that image — try a different photo.");
     }
   };
 
-  const clearPendingImage = () => setPendingImage(null);
+  const removePendingImage = (idx) => setPendingImages((prev) => prev.filter((_, i) => i !== idx));
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text && !pendingImage) return;
+    if (!text && pendingImages.length === 0) return;
     if (sending) return;
 
     setError("");
     const userMsg = {
       role: "user",
-      content: text || (pendingImage ? "What is in this image? Explain it clearly." : ""),
-      imagePreview: pendingImage?.dataUrl || null,
+      // No more auto-filled "What is in this image? Explain it clearly." —
+      // if the user didn't type anything, the message just carries the
+      // photo(s) and the AI is the one that asks what to do with them.
+      content: text,
+      imagePreviews: pendingImages.map((img) => img.dataUrl),
     };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
-    const imageForRequest = pendingImage?.dataUrl || null;
-    setPendingImage(null);
+    const imagesForRequest = pendingImages.map((img) => img.dataUrl);
+    setPendingImages([]);
     setSending(true);
 
     try {
-      // Only send role/content to the backend (imagePreview is UI-only).
+      // Only send role/content to the backend (imagePreviews is UI-only).
       const apiMessages = nextMessages.map((m) => ({ role: m.role, content: m.content }));
-      const reply = await askFocuslyAI(apiMessages, imageForRequest);
+      const reply = await askFocuslyAI(apiMessages, imagesForRequest);
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
       console.error(err);
@@ -133,25 +214,76 @@ export default function Chat({ user }) {
   return (
     <div className="flex flex-col h-full px-2">
       <div className="flex items-center gap-2 py-2">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
-          <Sparkles size={16} color={COL.violet} />
-        </div>
-        <div className="font-display font-semibold text-base flex-1" style={{ color: COL.ink }}>Ask AI</div>
+        {!selectMode ? (
+          <>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
+              <Sparkles size={16} color={COL.violet} />
+            </div>
+            <div className="font-display font-semibold text-base flex-1" style={{ color: COL.ink }}>Ask AI</div>
 
-        {messages.length > 1 && (
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            style={neu(false, 12)}
-            className="flex items-center gap-1.5 px-2.5 h-8 flex-shrink-0 active:scale-[0.95] transition"
-            aria-label="Delete all chats"
-          >
-            <Trash2 size={14} color={COL.sub} />
-            <span className="font-body text-xs font-semibold" style={{ color: COL.sub }}>
-              Delete all
-            </span>
-          </button>
+            {messages.length > 1 && (
+              <button
+                onClick={enterSelectMode}
+                style={neu(false, 12)}
+                className="flex items-center gap-1.5 px-2.5 h-8 flex-shrink-0 active:scale-[0.95] transition"
+                aria-label="Add to notes"
+              >
+                <NotebookPen size={14} color={COL.violet} />
+                <span className="font-body text-xs font-semibold" style={{ color: COL.violet }}>
+                  Add to notes
+                </span>
+              </button>
+            )}
+
+            {messages.length > 1 && (
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                style={neu(false, 12)}
+                className="flex items-center gap-1.5 px-2.5 h-8 flex-shrink-0 active:scale-[0.95] transition"
+                aria-label="Delete all chats"
+              >
+                <Trash2 size={14} color={COL.sub} />
+                <span className="font-body text-xs font-semibold" style={{ color: COL.sub }}>
+                  Delete all
+                </span>
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <button
+              onClick={cancelSelectMode}
+              className="font-body text-xs font-semibold px-1 flex-shrink-0"
+              style={{ color: COL.sub }}
+            >
+              Cancel
+            </button>
+            <div className="font-body text-xs flex-1 text-center" style={{ color: COL.sub }}>
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Tap message(s) to select"}
+            </div>
+            <button
+              onClick={saveSelectedToNotes}
+              disabled={selectedIds.size === 0 || savingNote}
+              style={{
+                borderRadius: 12,
+                background: selectedIds.size === 0 ? COL.track : "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+              }}
+              className="flex items-center gap-1.5 px-3 h-8 flex-shrink-0 active:scale-[0.95] transition disabled:opacity-60"
+            >
+              <NotebookPen size={13} color={selectedIds.size === 0 ? COL.sub : "#fff"} />
+              <span className="font-body text-xs font-semibold" style={{ color: selectedIds.size === 0 ? COL.sub : "#fff" }}>
+                {savingNote ? "Saving…" : "Save"}
+              </span>
+            </button>
+          </>
         )}
       </div>
+
+      {savedFlash && (
+        <div className="font-body text-xs px-1 pb-1 flex items-center gap-1" style={{ color: COL.mint }}>
+          <Check size={13} color={COL.mint} /> Saved to Notes
+        </div>
+      )}
 
       {showDeleteModal && (
         <div
@@ -198,23 +330,41 @@ export default function Chat({ user }) {
       )}
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto flex flex-col gap-3 py-2 pr-1">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+        {!loaded && !loadFailed ? (
+          <ChatSkeleton />
+        ) : (
+          <>
+          {messages.map((m, i) => (
+          <div
+            key={i}
+            className={`flex items-end gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}
+            onClick={() => selectMode && toggleSelected(i)}
+          >
+            {selectMode && m.role !== "user" && (
+              <SelectCheckbox checked={selectedIds.has(i)} />
+            )}
             <div
               style={{
                 ...neu(m.role === "user", 16),
                 maxWidth: "82%",
                 background: m.role === "user" ? "rgba(123,110,246,0.18)" : COL.card,
+                outline: selectMode && selectedIds.has(i) ? `2px solid ${COL.violet}` : "none",
+                cursor: selectMode ? "pointer" : "default",
               }}
               className="px-3 py-2"
             >
-              {m.imagePreview && (
-                <img
-                  src={m.imagePreview}
-                  alt="attachment"
-                  className="rounded-lg mb-2 max-h-48 object-cover"
-                  style={{ border: `1px solid ${COL.border}` }}
-                />
+              {(m.imagePreviews?.length > 0 || m.imagePreview) && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(m.imagePreviews || [m.imagePreview]).map((src, idx) => (
+                    <img
+                      key={idx}
+                      src={src}
+                      alt="attachment"
+                      className="rounded-lg max-h-48 object-cover"
+                      style={{ border: `1px solid ${COL.border}` }}
+                    />
+                  ))}
+                </div>
               )}
               {m.content && (
                 <div className="font-body text-sm whitespace-pre-wrap" style={{ color: COL.ink }}>
@@ -222,6 +372,9 @@ export default function Chat({ user }) {
                 </div>
               )}
             </div>
+            {selectMode && m.role === "user" && (
+              <SelectCheckbox checked={selectedIds.has(i)} />
+            )}
           </div>
         ))}
 
@@ -238,6 +391,8 @@ export default function Chat({ user }) {
             </div>
           </div>
         )}
+          </>
+        )}
       </div>
 
       {(error || loadFailed) && (
@@ -246,34 +401,39 @@ export default function Chat({ user }) {
         </div>
       )}
 
-      {pendingImage && (
-        <div className="flex items-center gap-2 px-1 pb-2">
-          <div className="relative">
-            <img
-              src={pendingImage.dataUrl}
-              alt="selected"
-              className="w-14 h-14 rounded-lg object-cover"
-              style={{ border: `1px solid ${COL.border}` }}
-            />
-            <button
-              onClick={clearPendingImage}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-              style={{ background: COL.coral }}
-              aria-label="Remove image"
-            >
-              <X size={12} color="#fff" />
-            </button>
-          </div>
+      {pendingImages.length > 0 && (
+        <div className="flex items-center gap-2 px-1 pb-2 flex-wrap">
+          {pendingImages.map((img, idx) => (
+            <div key={idx} className="relative">
+              <img
+                src={img.dataUrl}
+                alt="selected"
+                className="w-14 h-14 rounded-lg object-cover"
+                style={{ border: `1px solid ${COL.border}` }}
+              />
+              <button
+                onClick={() => removePendingImage(idx)}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: COL.coral }}
+                aria-label="Remove image"
+              >
+                <X size={12} color="#fff" />
+              </button>
+            </div>
+          ))}
           <div className="font-body text-xs" style={{ color: COL.sub }}>
-            Photo attached — add a question or just send.
+            {pendingImages.length < MAX_IMAGES
+              ? "Add a question or just send."
+              : `Max ${MAX_IMAGES} photos.`}
           </div>
         </div>
       )}
 
+      {!selectMode && (
       <div className="flex items-end gap-2 py-2">
         <button
           onClick={handlePickImage}
-          disabled={sending}
+          disabled={sending || pendingImages.length >= MAX_IMAGES}
           style={neu(false, 14)}
           className="w-11 h-11 flex items-center justify-center flex-shrink-0 active:scale-[0.95] transition disabled:opacity-50"
           aria-label="Attach photo"
@@ -284,6 +444,7 @@ export default function Chat({ user }) {
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={handleFileChange}
         />
@@ -300,7 +461,7 @@ export default function Chat({ user }) {
 
         <button
           onClick={handleSend}
-          disabled={sending || (!input.trim() && !pendingImage)}
+          disabled={sending || (!input.trim() && pendingImages.length === 0)}
           style={neu(false, 14)}
           className="w-11 h-11 flex items-center justify-center flex-shrink-0 active:scale-[0.95] transition disabled:opacity-40"
           aria-label="Send"
@@ -308,6 +469,7 @@ export default function Chat({ user }) {
           <Send size={18} color={COL.violet} />
         </button>
       </div>
+      )}
 
       <style>{`
         .fai-dot {
@@ -329,6 +491,17 @@ export default function Chat({ user }) {
           50% { transform: scale(1.2) rotate(15deg); opacity: 1; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function SelectCheckbox({ checked }) {
+  return (
+    <div
+      className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mb-1"
+      style={{ border: `2px solid ${checked ? COL.violet : COL.border}`, background: checked ? COL.violet : "transparent" }}
+    >
+      {checked && <Check size={12} color="#fff" />}
     </div>
   );
 }

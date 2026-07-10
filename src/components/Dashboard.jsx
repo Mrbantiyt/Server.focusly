@@ -14,8 +14,7 @@ function getGreeting() {
   return "Good night";
 }
 
-export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications }) {
-  const doneCount = tasks.filter((t) => t.done).length;
+export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications }) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
 
@@ -52,7 +51,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
 
       <div className="flex gap-3">
         <StatCard label="Time today" value={fmtHrs(bankedSeconds)} sub="synced to cloud" accent={COL.violet} />
-        <StatCard label="Tasks done" value={`${doneCount}/${tasks.length}`} sub="on track" accent={COL.mint} />
+        <StatCard label="Notes" value={`${notesCount}`} sub={notesCount === 1 ? "note saved" : "notes saved"} accent={COL.mint} />
       </div>
 
       <StopwatchCard seconds={displaySeconds} running={running} onToggle={onToggle} onReset={onReset} />
