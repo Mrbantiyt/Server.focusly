@@ -84,6 +84,14 @@ export function useStopwatch(uid) {
   // 1s re-render tick + midnight rollover check. Doesn't accumulate time
   // itself — just forces a re-render so the UI visibly counts up, and
   // checks whether we've crossed into a new day.
+  //
+  // IMPORTANT (perf): this interval used to call forceTick() unconditionally
+  // every second, forever — even while paused, even on tabs that don't show
+  // the stopwatch at all. Since this hook lives in App.jsx (mounted for the
+  // whole session), that meant the ENTIRE app re-rendered once a second no
+  // matter what the user was doing. The face only ever needs to visibly
+  // count up while actually running, so now we skip the re-render (but
+  // still check for day rollover) whenever the stopwatch is paused.
   useEffect(() => {
     const id = setInterval(() => {
       const key = dayKeyFor(new Date());
@@ -95,7 +103,7 @@ export function useStopwatch(uid) {
         setDayKey(key);
         return;
       }
-      forceTick((n) => n + 1);
+      if (runningRef.current) forceTick((n) => n + 1);
     }, 1000);
     return () => clearInterval(id);
   }, [dayKey, uid]);
