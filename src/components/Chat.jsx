@@ -13,12 +13,53 @@ import React, { useEffect, useRef, useState } from "react";
 import { Sparkles, Send, Image as ImageIcon, X, Trash2, NotebookPen, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { askFocuslyAI, fileToDataURL, compressImage } from "../lib/ai";
-import { getAiChat, saveAiChat, clearAiChat, addNote } from "../lib/firestore";
+import { getAiChat, saveAiChat, clearAiChat, addNote, updateNote } from "../lib/firestore";
+import { useNotes } from "../hooks/useNotes";
 import { ChatSkeleton } from "./Skeleton";
 
 // Max photos attachable to a single message — keeps payload size and the
-// vision request sane while still covering "two pages of the same notes".
-const MAX_IMAGES = 4;
+// vision request sane while still covering "several pages of the same
+// notes" (matches what a phone's photo picker comfortably hands over).
+const MAX_IMAGES = 6;
+
+// If a single assistant reply is long, it reads better as a couple of
+// separate chat bubbles (like a person typing multiple messages) instead
+// of one wall of text. This splits on paragraph breaks first, and only
+// hard-splits mid-paragraph if a single paragraph is itself huge.
+function splitReplyIntoChunks(text, maxLen = 700) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return [trimmed];
+  if (trimmed.length <= maxLen) return [trimmed];
+
+  const paragraphs = trimmed.split(/\n{2,}/);
+  const chunks = [];
+  let current = "";
+  for (const para of paragraphs) {
+    if (!current) {
+      current = para;
+    } else if ((current + "\n\n" + para).length <= maxLen) {
+      current += "\n\n" + para;
+    } else {
+      chunks.push(current);
+      current = para;
+    }
+  }
+  if (current) chunks.push(current);
+
+  // A single paragraph longer than maxLen*1.5 won't have been split above —
+  // fall back to a hard split so we never emit one giant bubble.
+  const final = [];
+  for (const chunk of chunks) {
+    if (chunk.length <= maxLen * 1.5) {
+      final.push(chunk);
+    } else {
+      for (let i = 0; i < chunk.length; i += maxLen) {
+        final.push(chunk.slice(i, i + maxLen));
+      }
+    }
+  }
+  return final.length ? final : [trimmed];
+}
 
 const WELCOME_MSG = { role: "assistant", content: "Hey! I'm Focusly AI. Ask me anything, or attach a photo of your notes and I'll help explain it." };
 
@@ -33,12 +74,16 @@ export default function Chat({ user }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   // "Add to notes": tap the button, tap one or more messages to select them
-  // (multi-select), then tap "Save" — this copies the selected message(s)
-  // into a brand-new note (auto-titled) on the Notes tab.
+  // (multi-select), then tap "Save" — this opens a small chooser asking
+  // whether to file the selected message(s) into a brand-new note or
+  // append them to an existing one.
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [savingNote, setSavingNote] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pendingNote, setPendingNote] = useState(null); // { heading, noteText }
+  const [noteTargetStep, setNoteTargetStep] = useState(null); // null | "choose" | "pickExisting"
+  const { notes: existingNotes } = useNotes(user?.uid);
   const fileInputRef = useRef(null);
   const scrollRef = useRef(null);
 
@@ -104,32 +149,64 @@ export default function Chat({ user }) {
     });
   };
 
-  // Copies the selected message(s) into ONE new note, auto-titled from the
-  // first selected message, in the same order they appear in the chat.
-  const saveSelectedToNotes = async () => {
+  // Step 1: build the note text from the selected message(s) and open the
+  // "New note / Add to existing note" chooser instead of saving right away.
+  const saveSelectedToNotes = () => {
     if (!user?.uid || selectedIds.size === 0 || savingNote) return;
+
+    const selected = messages
+      .map((m, i) => ({ ...m, _i: i }))
+      .filter((m) => selectedIds.has(m._i));
+
+    // Auto-generate a heading from the first selected message so the note
+    // shows up in the Notes list with something recognizable, instead of
+    // just "Empty note".
+    const titleSource = (selected.find((m) => m.content?.trim())?.content || "Ask AI").trim();
+    const heading = titleSource.length > 60 ? titleSource.slice(0, 60).trimEnd() + "…" : titleSource;
+
+    const body = selected
+      .map((m) => `${m.role === "user" ? "You" : "Focusly AI"}: ${m.content || "(photo)"}`)
+      .join("\n\n");
+
+    setPendingNote({ heading, noteText: `${heading}\n\n${body}` });
+    setNoteTargetStep("choose");
+  };
+
+  const closeNoteTargetModal = () => {
+    setNoteTargetStep(null);
+    setPendingNote(null);
+  };
+
+  const finishSavingNote = () => {
+    setSavedFlash(true);
+    setTimeout(() => setSavedFlash(false), 2200);
+    closeNoteTargetModal();
+    cancelSelectMode();
+  };
+
+  // Step 2a: file the selected message(s) into a brand-new note.
+  const confirmSaveAsNewNote = async () => {
+    if (!user?.uid || !pendingNote || savingNote) return;
     setSavingNote(true);
     try {
-      const selected = messages
-        .map((m, i) => ({ ...m, _i: i }))
-        .filter((m) => selectedIds.has(m._i));
+      await addNote(user.uid, pendingNote.noteText);
+      finishSavingNote();
+    } catch (err) {
+      console.error("Failed to save to notes:", err);
+      setError("Couldn't save to Notes — try again.");
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
-      // Auto-generate a heading from the first selected message so the note
-      // shows up in the Notes list with something recognizable, instead of
-      // just "Empty note".
-      const titleSource = (selected.find((m) => m.content?.trim())?.content || "Ask AI").trim();
-      const heading = titleSource.length > 60 ? titleSource.slice(0, 60).trimEnd() + "…" : titleSource;
-
-      const body = selected
-        .map((m) => `${m.role === "user" ? "You" : "Focusly AI"}: ${m.content || "(photo)"}`)
-        .join("\n\n");
-
-      const noteText = `${heading}\n\n${body}`;
-      await addNote(user.uid, noteText);
-
-      setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 2200);
-      cancelSelectMode();
+  // Step 2b: append the selected message(s) onto the end of an existing note.
+  const confirmAppendToNote = async (note) => {
+    if (!user?.uid || !pendingNote || savingNote) return;
+    setSavingNote(true);
+    try {
+      const merged = [note.text, pendingNote.noteText].filter(Boolean).join("\n\n");
+      await updateNote(user.uid, note.id, merged);
+      finishSavingNote();
     } catch (err) {
       console.error("Failed to save to notes:", err);
       setError("Couldn't save to Notes — try again.");
@@ -195,7 +272,10 @@ export default function Chat({ user }) {
       // Only send role/content to the backend (imagePreviews is UI-only).
       const apiMessages = nextMessages.map((m) => ({ role: m.role, content: m.content }));
       const reply = await askFocuslyAI(apiMessages, imagesForRequest);
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      // Long answers read better as a few short messages than one wall of
+      // text — split on paragraph breaks so it feels like natural typing.
+      const chunks = splitReplyIntoChunks(reply);
+      setMessages((prev) => [...prev, ...chunks.map((content) => ({ role: "assistant", content }))]);
     } catch (err) {
       console.error(err);
       setError(err.message || "Something went wrong talking to Focusly AI.");
@@ -325,6 +405,96 @@ export default function Chat({ user }) {
                 {deleting ? "Deleting…" : "Delete all"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {noteTargetStep && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-6"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+          onClick={() => !savingNote && closeNoteTargetModal()}
+        >
+          <div
+            style={{ ...neu(false, 20), background: COL.card }}
+            className="w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {noteTargetStep === "choose" && (
+              <>
+                <div className="font-display font-semibold text-base mb-1.5" style={{ color: COL.ink }}>
+                  Save to Notes
+                </div>
+                <div className="font-body text-sm mb-4" style={{ color: COL.sub }}>
+                  Start a new note, or add this to a note you already have?
+                </div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={confirmSaveAsNewNote}
+                    disabled={savingNote}
+                    style={{
+                      borderRadius: 14,
+                      background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+                      boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+                      color: "#FFFFFF",
+                    }}
+                    className="font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-50"
+                  >
+                    {savingNote ? "Saving…" : "New note"}
+                  </button>
+                  <button
+                    onClick={() => setNoteTargetStep("pickExisting")}
+                    disabled={savingNote || existingNotes.length === 0}
+                    style={neu(false, 14)}
+                    className="font-body text-sm font-semibold py-2.5 active:scale-[0.97] transition disabled:opacity-50"
+                  >
+                    {existingNotes.length === 0 ? "No existing notes" : "Add to existing note"}
+                  </button>
+                  <button
+                    onClick={closeNoteTargetModal}
+                    disabled={savingNote}
+                    className="font-body text-xs py-1.5"
+                    style={{ color: COL.sub }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {noteTargetStep === "pickExisting" && (
+              <>
+                <div className="font-display font-semibold text-base mb-1.5" style={{ color: COL.ink }}>
+                  Add to which note?
+                </div>
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto mb-2">
+                  {existingNotes.map((note) => {
+                    const snippet = (note.text || "").trim().split("\n")[0] || "Empty note";
+                    return (
+                      <button
+                        key={note.id}
+                        onClick={() => confirmAppendToNote(note)}
+                        disabled={savingNote}
+                        style={neu(false, 12)}
+                        className="text-left px-3 py-2.5 active:scale-[0.98] transition disabled:opacity-50"
+                      >
+                        <div className="font-body text-sm truncate" style={{ color: COL.ink }}>
+                          {snippet}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => setNoteTargetStep("choose")}
+                  disabled={savingNote}
+                  className="font-body text-xs py-1.5"
+                  style={{ color: COL.sub }}
+                >
+                  {savingNote ? "Saving…" : "Back"}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
