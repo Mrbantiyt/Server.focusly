@@ -71,13 +71,13 @@ export default function Notes({ uid, notes }) {
 
       <div className="flex flex-col gap-3">
         {notes.map((n) => {
-          const heading = n.title?.trim() || n.text?.trim()?.split("\n")[0] || "";
+          const safeTitle = typeof n.title === "string" ? n.title.trim() : "";
+          const safeText = typeof n.text === "string" ? n.text.trim() : "";
+          const heading = safeTitle || safeText.split("\n")[0] || "";
           // When there's no explicit title, the first line of the body is
           // already shown as the heading, so the preview below skips it to
           // avoid repeating the same line twice.
-          const preview = n.title?.trim()
-            ? n.text?.trim() || ""
-            : n.text?.trim()?.split("\n").slice(1).join("\n").trim() || "";
+          const preview = safeTitle ? safeText : safeText.split("\n").slice(1).join("\n").trim();
           return (
             <button
               key={n.id}
@@ -139,8 +139,8 @@ function NoteEditor({ uid, note, onBack, onDelete }) {
   // Local-first: typing only ever touches this state, so it's always
   // instant regardless of network speed. The Firestore write is debounced
   // in the background and also flushed immediately on the way out.
-  const [title, setTitle] = useState(note.title || "");
-  const [text, setText] = useState(note.text || "");
+  const [title, setTitle] = useState(typeof note.title === "string" ? note.title : "");
+  const [text, setText] = useState(typeof note.text === "string" ? note.text : "");
   const titleRef = useRef(title);
   titleRef.current = title;
   const textRef = useRef(text);
@@ -153,8 +153,8 @@ function NoteEditor({ uid, note, onBack, onDelete }) {
   // device) while this one isn't focused, reflect it — but never stomp on
   // what the user is actively typing right now.
   useEffect(() => {
-    if (document.activeElement !== taRef.current) setText(note.text || "");
-    if (document.activeElement !== titleInputRef.current) setTitle(note.title || "");
+    if (document.activeElement !== taRef.current) setText(typeof note.text === "string" ? note.text : "");
+    if (document.activeElement !== titleInputRef.current) setTitle(typeof note.title === "string" ? note.title : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.id, note.text, note.title]);
 

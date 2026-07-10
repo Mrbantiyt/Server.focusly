@@ -172,7 +172,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
         </div>
 
         {collection.length === 0 ? (
-          <div style={neu(true, 20)} className="p-5 text-center font-body text-xs" style={{ color: COL.sub }}>
+          <div style={{ ...neu(true, 20), color: COL.sub }} className="p-5 text-center font-body text-xs">
             Nothing here yet — buy a theme above to unlock it.
           </div>
         ) : (

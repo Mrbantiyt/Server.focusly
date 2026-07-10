@@ -217,7 +217,7 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
       </div>
 
       {collection.length === 0 ? (
-        <div style={neu(true, 20)} className="p-5 text-center font-body text-xs" style={{ color: COL.sub }}>
+        <div style={{ ...neu(true, 20), color: COL.sub }} className="p-5 text-center font-body text-xs">
           You haven't unlocked any icons yet — buy a theme in the Store to see it here.
         </div>
       ) : (

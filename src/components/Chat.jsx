@@ -471,7 +471,9 @@ export default function Chat({ user }) {
                 </div>
                 <div className="flex flex-col gap-2 max-h-64 overflow-y-auto mb-2">
                   {existingNotes.map((note) => {
-                    const snippet = note.title?.trim() || (note.text || "").trim().split("\n")[0] || "Empty note";
+                    const safeTitle = typeof note.title === "string" ? note.title.trim() : "";
+                    const safeText = typeof note.text === "string" ? note.text.trim() : "";
+                    const snippet = safeTitle || safeText.split("\n")[0] || "Empty note";
                     return (
                       <button
                         key={note.id}
