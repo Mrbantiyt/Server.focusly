@@ -574,11 +574,14 @@ export async function clearAiChat(uid) {
 
 /* ---------------------------------- notes -------------------------------------- */
 
-// users/{uid}/notes/{noteId} = { text, createdAt, updatedAt }
+// users/{uid}/notes/{noteId} = { title, text, createdAt, updatedAt }
 // A plain, permanent notes list (like the built-in Notes app on a phone) —
-// replaces the old daily Tasks tab. No character limit is enforced anywhere
-// in this file or the UI; a Firestore document can hold up to ~1MiB total,
-// which is effectively unlimited for typed notes.
+// replaces the old daily Tasks tab. `title` is a separate heading field
+// (like the "Title" box in a phone's stock Notes app) — it's optional, and
+// the list view falls back to the first line of `text` when it's empty.
+// No character limit is enforced anywhere in this file or the UI; a
+// Firestore document can hold up to ~1MiB total, which is effectively
+// unlimited for typed notes.
 export function watchNotes(uid, cb) {
   const ref = collection(db, "users", uid, "notes");
   return onSnapshot(ref, (snap) => {
@@ -589,9 +592,10 @@ export function watchNotes(uid, cb) {
   });
 }
 
-export async function addNote(uid, text = "") {
+export async function addNote(uid, text = "", title = "") {
   const ref = collection(db, "users", uid, "notes");
   const docRef = await addDoc(ref, {
+    title,
     text,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -599,9 +603,11 @@ export async function addNote(uid, text = "") {
   return docRef.id;
 }
 
-export async function updateNote(uid, noteId, text) {
+// `updates` is a partial object, e.g. { text } or { title } or both — so
+// callers can save just the field that changed without clobbering the other.
+export async function updateNote(uid, noteId, updates) {
   const ref = doc(db, "users", uid, "notes", noteId);
-  await updateDoc(ref, { text, updatedAt: serverTimestamp() });
+  await updateDoc(ref, { ...updates, updatedAt: serverTimestamp() });
 }
 
 export async function deleteNote(uid, noteId) {
