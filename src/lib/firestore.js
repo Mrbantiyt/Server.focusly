@@ -571,3 +571,40 @@ export async function clearAiChat(uid) {
   const ref = doc(db, "users", uid, "aiChat", "session");
   await deleteDoc(ref);
 }
+
+/* ---------------------------------- notes -------------------------------------- */
+
+// users/{uid}/notes/{noteId} = { text, createdAt, updatedAt }
+// A plain, permanent notes list (like the built-in Notes app on a phone) —
+// replaces the old daily Tasks tab. No character limit is enforced anywhere
+// in this file or the UI; a Firestore document can hold up to ~1MiB total,
+// which is effectively unlimited for typed notes.
+export function watchNotes(uid, cb) {
+  const ref = collection(db, "users", uid, "notes");
+  return onSnapshot(ref, (snap) => {
+    const notes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Most recently edited first, like a real notes app.
+    notes.sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+    cb(notes);
+  });
+}
+
+export async function addNote(uid, text = "") {
+  const ref = collection(db, "users", uid, "notes");
+  const docRef = await addDoc(ref, {
+    text,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateNote(uid, noteId, text) {
+  const ref = doc(db, "users", uid, "notes", noteId);
+  await updateDoc(ref, { text, updatedAt: serverTimestamp() });
+}
+
+export async function deleteNote(uid, noteId) {
+  const ref = doc(db, "users", uid, "notes", noteId);
+  await deleteDoc(ref);
+}

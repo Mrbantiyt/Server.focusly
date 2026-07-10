@@ -4,7 +4,10 @@
 
 import { auth } from "../firebase";
 
-export async function askFocuslyAI(messages, imageBase64 = null) {
+// `images` is an array of data-URL strings (0, 1, or many photos attached
+// to the last user message). Kept as an array end-to-end so a question can
+// reference multiple photos at once (e.g. two pages of the same notes).
+export async function askFocuslyAI(messages, images = []) {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to use the AI chat");
   const idToken = await user.getIdToken();
@@ -15,7 +18,7 @@ export async function askFocuslyAI(messages, imageBase64 = null) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ messages, imageBase64 }),
+    body: JSON.stringify({ messages, imagesBase64: images }),
   });
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.error || "AI request failed");
