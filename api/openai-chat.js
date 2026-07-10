@@ -6,69 +6,37 @@
 // lives ONLY in Vercel's environment variables (Project Settings ->
 // Environment Variables -> AI_API_KEY) and is never sent to the browser.
 //
-// SECURITY: requires a valid Firebase ID token — previously this endpoint
-// had no auth check at all, meaning anyone who found the URL could call it
-// directly and run up the bill with no login required.
+// SECURITY: requires a valid Firebase ID token, is rate-limited per user,
+// and validates the request body shape before doing anything else.
 //
 // Request body: { messages: [{role, content}], imagesBase64?: ["data:image/...", ...] }
 // Header:       Authorization: Bearer <firebaseIdToken>
 
 import { requireAuth } from "./_lib/verifyAuth.js";
+import { checkRateLimit } from "./_lib/rateLimit.js";
+import { openaiChatBodySchema, validateBody } from "./_lib/schemas.js";
+import { withSentry } from "./_lib/sentry.js";
 
-// Base URL of the BluesMinds relay's OpenAI-compatible endpoint. Override
-// with AI_API_BASE_URL in Vercel env vars if the relay's address changes.
+// Primary provider.
 const AI_API_URL = process.env.AI_API_BASE_URL || "https://api.bluesminds.com/v1/chat/completions";
-
-// Any model enabled for this token on the BluesMinds panel and that
-// supports vision (image input) works here — the token created in the
-// panel was restricted to "gpt-5.5".
 const AI_MODEL = process.env.AI_MODEL || "gpt-5.5";
+const AI_API_KEY = process.env.AI_API_KEY;
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+// Optional fallback provider — used only if the primary call fails (network
+// error, 5xx, timeout). Leave AI_API_KEY_FALLBACK unset to disable this;
+// the code just skips straight to returning the primary error in that case.
+const AI_API_URL_FALLBACK = process.env.AI_API_BASE_URL_FALLBACK || "https://api.openai.com/v1/chat/completions";
+const AI_MODEL_FALLBACK = process.env.AI_MODEL_FALLBACK || "gpt-4o-mini";
+const AI_API_KEY_FALLBACK = process.env.AI_API_KEY_FALLBACK;
 
-  try {
-    await requireAuth(req);
-  } catch (err) {
-    return res.status(err.statusCode || 401).json({ error: err.message });
-  }
+const SYSTEM_PROMPT =
+  "You are Focusly AI, a friendly study assistant inside a student productivity app. " +
+  "When shown a photo of notes, a textbook page, or a whiteboard, read it carefully and " +
+  "explain the concepts clearly and simply, like a helpful tutor. Keep answers concise " +
+  "and well-structured (use short paragraphs or bullet points).";
 
-  const apiKey = process.env.AI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "AI_API_KEY not configured on server" });
-  }
-
-  // Back-compat: accept the old singular `imageBase64` too, but the client
-  // now sends `imagesBase64` (an array) so multiple photos can be attached
-  // to one message.
-  const { messages = [], imagesBase64, imageBase64 } = req.body || {};
-  const images = (Array.isArray(imagesBase64) ? imagesBase64 : imageBase64 ? [imageBase64] : []).filter(Boolean);
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: "messages[] required" });
-  }
-
-  // Reject any client-supplied "system" role message — without this, a
-  // malicious client could inject a fake system message to try to override
-  // the real system prompt below. Only user/assistant turns are legitimate
-  // coming from the client.
-  const hasClientSystemMsg = messages.some((m) => m.role === "system");
-  if (hasClientSystemMsg) {
-    return res.status(400).json({ error: "system-role messages are not allowed from the client" });
-  }
-
-  // Build the OpenAI-format message list. If image(s) are attached, turn the
-  // last user message into a multi-part content array (text + one
-  // image_url part per photo).
-  //
-  // When the user attached photo(s) but typed no question, we deliberately
-  // do NOT put words in their mouth (no more auto "What is in this image?
-  // Explain it clearly."). Instead we tell the model to look at the
-  // photo(s) and ask the user what they'd like help with — mirroring what
-  // a human tutor would do if someone silently handed over a page of notes.
-  const openaiMessages = messages.map((m, i) => {
+function buildOpenaiMessages(messages, images) {
+  return messages.map((m, i) => {
     const isLastUser = i === messages.length - 1 && m.role === "user";
     if (isLastUser && images.length > 0) {
       const text = m.content?.trim()
@@ -84,39 +52,87 @@ export default async function handler(req, res) {
     }
     return { role: m.role, content: m.content };
   });
+}
+
+async function callProvider(url, apiKey, model, openaiMessages) {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...openaiMessages],
+      max_tokens: 2000,
+    }),
+  });
+  const data = await resp.json();
+  return { ok: resp.ok, status: resp.status, data };
+}
+
+async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  let decoded;
+  try {
+    decoded = await requireAuth(req);
+  } catch (err) {
+    return res.status(err.statusCode || 401).json({ error: err.message });
+  }
+
+  // Rate limit AFTER auth so we key on a real, verified uid (can't be spoofed).
+  const rl = await checkRateLimit("openai-chat", decoded.uid, { requests: 15, windowSeconds: 60 });
+  if (!rl.success) {
+    return res.status(429).json({ error: "Too many requests — please slow down and try again shortly." });
+  }
+
+  const { data: body, error: badBody } = validateBody(openaiChatBodySchema, req.body, res);
+  if (badBody) return; // validateBody already sent the 400 response
+
+  const { messages, imagesBase64, imageBase64 } = body;
+  const images = (Array.isArray(imagesBase64) ? imagesBase64 : imageBase64 ? [imageBase64] : []).filter(Boolean);
+
+  // Reject any client-supplied "system" role message — without this, a
+  // malicious client could inject a fake system message to try to override
+  // the real system prompt above.
+  const hasClientSystemMsg = messages.some((m) => m.role === "system");
+  if (hasClientSystemMsg) {
+    return res.status(400).json({ error: "system-role messages are not allowed from the client" });
+  }
+
+  if (!AI_API_KEY) {
+    return res.status(500).json({ error: "AI_API_KEY not configured on server" });
+  }
+
+  const openaiMessages = buildOpenaiMessages(messages, images);
 
   try {
-    const resp = await fetch(AI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are Focusly AI, a friendly study assistant inside a student productivity app. " +
-              "When shown a photo of notes, a textbook page, or a whiteboard, read it carefully and " +
-              "explain the concepts clearly and simply, like a helpful tutor. Keep answers concise " +
-              "and well-structured (use short paragraphs or bullet points).",
-          },
-          ...openaiMessages,
-        ],
-        max_tokens: 2000,
-      }),
-    });
+    let result = await callProvider(AI_API_URL, AI_API_KEY, AI_MODEL, openaiMessages);
 
-    const data = await resp.json();
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: data.error?.message || "AI provider error" });
+    // Fallback: only on transport/server failure, and only if a fallback key
+    // is configured. Don't fall back on 4xx (that's a real client-side error,
+    // e.g. bad request) — only on 5xx/network issues where the primary
+    // provider itself is the problem.
+    if ((!result.ok && result.status >= 500) && AI_API_KEY_FALLBACK) {
+      try {
+        result = await callProvider(AI_API_URL_FALLBACK, AI_API_KEY_FALLBACK, AI_MODEL_FALLBACK, openaiMessages);
+      } catch (fallbackErr) {
+        // keep the original result/error if the fallback itself throws
+      }
     }
 
-    const reply = data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a reply.";
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.data.error?.message || "AI provider error" });
+    }
+
+    const reply = result.data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a reply.";
     return res.status(200).json({ reply });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 }
+
+export default withSentry(handler);

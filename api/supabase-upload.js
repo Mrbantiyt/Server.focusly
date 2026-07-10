@@ -17,11 +17,14 @@
 
 import { requireAuth } from "./_lib/verifyAuth.js";
 import { getSupabaseAdmin, BUCKET_NAME } from "./_lib/supabaseAdmin.js";
+import { checkRateLimit } from "./_lib/rateLimit.js";
+import { uploadBodySchema, validateBody } from "./_lib/schemas.js";
+import { withSentry } from "./_lib/sentry.js";
 
 // Hard cap so a single upload can't be used to burn storage/bandwidth.
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -33,15 +36,16 @@ export default async function handler(req, res) {
     return res.status(err.statusCode || 401).json({ error: err.message });
   }
 
-  const { imageBase64, folder = "goals" } = req.body || {};
-  if (!imageBase64 || !imageBase64.startsWith("data:")) {
-    return res.status(400).json({ error: "imageBase64 (data URL) required" });
+  // Uploads are more expensive (storage + bandwidth) than a normal API call,
+  // so keep this limit tighter than the chat endpoint's.
+  const rl = await checkRateLimit("supabase-upload", decoded.uid, { requests: 10, windowSeconds: 60 });
+  if (!rl.success) {
+    return res.status(429).json({ error: "Too many uploads — please slow down and try again shortly." });
   }
-  // Only allow simple, predictable folder names — prevents someone from
-  // passing "../../etc" or similar and writing outside their own prefix.
-  if (!/^[a-zA-Z0-9_-]{1,40}$/.test(folder)) {
-    return res.status(400).json({ error: "invalid folder name" });
-  }
+
+  const { data: body, error: badBody } = validateBody(uploadBodySchema, req.body, res);
+  if (badBody) return; // validateBody already sent the 400 response
+  const { imageBase64, folder } = body;
 
   try {
     const commaIdx = imageBase64.indexOf(",");
@@ -76,3 +80,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
+
+export default withSentry(handler);
