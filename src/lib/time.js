@@ -28,12 +28,23 @@ export function fmtHrs(totalSeconds) {
   return (s / 3600).toFixed(1) + "h";
 }
 
-// Compact display for coin/XP counters: 1000 -> "1k", 12500 -> "12.5k"
+// Compact display for coin/XP counters: 1000 -> "1k", 12500 -> "12.5k",
+// 1,000,000 -> "1M", 1,000,000,000 -> "1B", 1,000,000,000,000 -> "1T"
 export function fmtCompact(n) {
   const num = Math.max(0, Math.floor(n));
-  if (num < 1000) return `${num}`;
-  const k = num / 1000;
-  return `${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}k`;
+  const units = [
+    { value: 1e12, suffix: "T" },
+    { value: 1e9, suffix: "B" },
+    { value: 1e6, suffix: "M" },
+    { value: 1e3, suffix: "k" },
+  ];
+  for (const { value, suffix } of units) {
+    if (num >= value) {
+      const scaled = num / value;
+      return `${scaled % 1 === 0 ? scaled.toFixed(0) : scaled.toFixed(1)}${suffix}`;
+    }
+  }
+  return `${num}`;
 }
 
 // milliseconds until the next midnight boundary from "now"
