@@ -7,7 +7,9 @@ import { useStopwatch } from "./hooks/useStopwatch";
 import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useTasks } from "./hooks/useTasks";
 import { useGameStats } from "./hooks/useGameStats";
+import { useNotifications } from "./hooks/useNotifications";
 import { watchUserProfile } from "./lib/firestore";
+import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
 
 import Login from "./components/Login";
@@ -20,6 +22,7 @@ import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
+import NotificationsPanel from "./components/NotificationsPanel";
 import Store, { STORE_ITEMS } from "./components/Store";
 import { AppLoadingSkeleton } from "./components/Skeleton";
 
@@ -47,9 +50,11 @@ export default function App() {
   // App.jsx is what stays mounted across tab switches.
   const { tasks } = useTasks(user?.uid);
   const gameStats = useGameStats(user?.uid, running);
+  const { notifications, unreadCount } = useNotifications(user?.uid);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
   const [showStore, setShowStore] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const activeMascotItem = STORE_ITEMS.find((it) => it.id === gameStats.activeMascot);
   const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
@@ -122,7 +127,13 @@ export default function App() {
             <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               {tab === "home" && (
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
-                  tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey} />
+                  tasks={tasks} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
+                  unreadCount={unreadCount}
+                  onOpenNotifications={() => {
+                    setShowNotifications(true);
+                    if (user?.uid) markAllRead(user.uid, notifications);
+                  }}
+                />
               )}
               {tab === "chat" && <Chat user={user} />}
               {tab === "tasks" && <Tasks uid={user.uid} tasks={tasks} />}
@@ -196,6 +207,13 @@ export default function App() {
           ownedItems={gameStats.ownedItems}
           activeMascot={gameStats.activeMascot}
           onClose={() => setShowStore(false)}
+        />
+      )}
+      {showNotifications && (
+        <NotificationsPanel
+          uid={user.uid}
+          notifications={notifications}
+          onClose={() => setShowNotifications(false)}
         />
       )}
     </div>
