@@ -5,7 +5,7 @@
 // overlay with a back button, then returns to the same menu.
 import React, { useState } from "react";
 import {
-  ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks, Target,
+  ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
   Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3, CreditCard, Gift, Sparkles,
 } from "lucide-react";
@@ -334,16 +334,9 @@ function StatTile({ icon: Icon, accent, label, value, note }) {
 
 function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coins, streak, level, onBack }) {
   // `tasks` only ever contains TODAY's tasks now (they're wiped at
-  // midnight — see runMidnightTaskReset in lib/firestore.js), so these two
-  // are "today" numbers...
+  // midnight — see runMidnightTaskReset in lib/firestore.js), so this is a
+  // "today" number...
   const todayTasksDone = tasks.filter((t) => t.done).length;
-  const todayGoalsTotal = tasks.reduce((n, t) => n + (t.goals?.length || 0), 0);
-  const todayGoalsDone = tasks.reduce((n, t) => n + (t.goals?.filter((g) => g.done).length || 0), 0);
-
-  // ...while this comes from the lifetime counter that survives the daily
-  // wipe, so "Goals completed" keeps growing across every day the app's been used.
-  const stats = taskStats || { totalCreated: 0, totalCompleted: 0, totalGoalsCompleted: 0 };
-  const totalGoalsCompleted = stats.totalGoalsCompleted + todayGoalsDone;
 
   return (
     <div className="flex flex-col gap-5">
@@ -352,7 +345,6 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coin
         <StatTile icon={Clock} accent={COL.blue} label="Today time" value={fmtHrs(todaySeconds)} />
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
         <StatTile icon={ListChecks} accent={COL.mint} label="Today's tasks" value={`${todayTasksDone}/${tasks.length}`} note="Resets at midnight" />
-        <StatTile icon={Target} accent={COL.blue} label="Goals completed" value={`${totalGoalsCompleted}`} note="All-time" />
         <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
         <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
         <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
@@ -459,7 +451,7 @@ function HowToUsePanel({ onBack }) {
     { title: "Reset just resets the face", body: "Tapping reset only zeroes the stopwatch's own display for a fresh session — it never removes time you've already banked for the day." },
     { title: "Add notes", body: "On the Notes tab, tap \"New note\" to jot anything down — no character limit, so a note can be as short or as long as you need." },
     { title: "Check your Calendar", body: "The Calendar tab shows how many hours you studied on each day, plus a 7-day / 1-month progress chart." },
-    { title: "See your stats in Your data", body: "Settings → Your data shows today's time, total study time, today's tasks, goals completed, coins, streak, and level, all in one place." },
+    { title: "See your stats in Your data", body: "Settings → Your data shows today's time, total study time, today's tasks, coins, streak, and level, all in one place." },
     { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, today's task completion rate, and a 7-day bar chart." },
     { title: "Earn XP, coins, and streaks", body: "You earn XP for every 10 seconds you study, level up over time, and build a daily streak by opening the app and studying each day. Coins are paid out on level-up and can be spent in the Store." },
     { title: "Customize your look", body: "Buy mascots in the Store with coins, then pick your favorite as your app icon under Settings → Customize." },
