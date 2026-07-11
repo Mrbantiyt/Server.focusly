@@ -13,7 +13,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Sparkles, Send, Image as ImageIcon, X, Trash2, NotebookPen, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { askFocuslyAI, fileToDataURL, compressImage } from "../lib/ai";
-import { getAiChat, saveAiChat, clearAiChat, addNote, updateNote } from "../lib/firestore";
+import { getAiChat, saveAiChat, clearAiChat, addNote, updateNote, incrementAiUsage } from "../lib/firestore";
+import { getEffectivePlan, getAiMessageLimit, PLAN_LABELS } from "../lib/billing";
 import { useNotes } from "../hooks/useNotes";
 import { ChatSkeleton } from "./Skeleton";
 
@@ -63,7 +64,17 @@ function splitReplyIntoChunks(text, maxLen = 700) {
 
 const WELCOME_MSG = { role: "assistant", content: "Hey! I'm Focusly AI. Ask me anything, or attach a photo of your notes and I'll help explain it." };
 
-export default function Chat({ user }) {
+export default function Chat({ user, billing, aiUsage, dayKey }) {
+  // Daily "Ask AI" message limit — Free/Team/Max get 5/25/50 messages per
+  // day respectively (see src/lib/billing.js). `aiUsage` is the live
+  // { dayKey, count } doc from Firestore (via App.jsx's profile listener),
+  // so this stays in sync across tabs/devices without any polling here.
+  const effectivePlan = getEffectivePlan(billing);
+  const aiMessageLimit = getAiMessageLimit(billing);
+  const usedToday = aiUsage && aiUsage.dayKey === dayKey ? aiUsage.count || 0 : 0;
+  const remainingToday = Math.max(0, aiMessageLimit - usedToday);
+  const limitReached = remainingToday <= 0;
+
   const [messages, setMessages] = useState([WELCOME_MSG]);
   const [loaded, setLoaded] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -252,6 +263,14 @@ export default function Chat({ user }) {
     if (!text && pendingImages.length === 0) return;
     if (sending) return;
 
+    if (limitReached) {
+      setError(
+        `You've used all ${aiMessageLimit} ${PLAN_LABELS[effectivePlan]} plan AI messages for today. ` +
+        `Redeem a Team or Max code in Settings → Billing for more.`
+      );
+      return;
+    }
+
     setError("");
     const userMsg = {
       role: "user",
@@ -276,6 +295,11 @@ export default function Chat({ user }) {
       // text — split on paragraph breaks so it feels like natural typing.
       const chunks = splitReplyIntoChunks(reply);
       setMessages((prev) => [...prev, ...chunks.map((content) => ({ role: "assistant", content }))]);
+      // Only count it against the daily limit once we know the AI actually
+      // replied — a failed request shouldn't cost the user a message.
+      if (user?.uid) {
+        incrementAiUsage(user.uid, dayKey).catch((err) => console.error("Failed to record AI usage:", err));
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || "Something went wrong talking to Focusly AI.");
@@ -299,7 +323,12 @@ export default function Chat({ user }) {
             <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
               <Sparkles size={16} color={COL.violet} />
             </div>
-            <div className="font-display font-semibold text-base flex-1" style={{ color: COL.ink }}>Ask AI</div>
+            <div className="flex-1 min-w-0">
+              <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>Ask AI</div>
+              <div className="font-body text-[11px]" style={{ color: limitReached ? COL.coral : COL.sub }}>
+                {usedToday}/{aiMessageLimit} messages today · {PLAN_LABELS[effectivePlan]} plan
+              </div>
+            </div>
 
             {messages.length > 1 && (
               <button
@@ -607,7 +636,7 @@ export default function Chat({ user }) {
       <div className="flex items-end gap-2 py-2">
         <button
           onClick={handlePickImage}
-          disabled={sending || pendingImages.length >= MAX_IMAGES}
+          disabled={sending || limitReached || pendingImages.length >= MAX_IMAGES}
           style={neu(false, 14)}
           className="w-11 h-11 flex items-center justify-center flex-shrink-0 active:scale-[0.95] transition disabled:opacity-50"
           aria-label="Attach photo"
@@ -627,15 +656,16 @@ export default function Chat({ user }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask a question…"
+          disabled={limitReached}
+          placeholder={limitReached ? "Daily AI message limit reached" : "Ask a question…"}
           rows={1}
           style={{ ...neu(true, 14), color: COL.ink, resize: "none" }}
-          className="flex-1 font-body text-sm px-3 py-3 outline-none min-h-[44px] max-h-28"
+          className="flex-1 font-body text-sm px-3 py-3 outline-none min-h-[44px] max-h-28 disabled:opacity-60"
         />
 
         <button
           onClick={handleSend}
-          disabled={sending || (!input.trim() && pendingImages.length === 0)}
+          disabled={sending || limitReached || (!input.trim() && pendingImages.length === 0)}
           style={neu(false, 14)}
           className="w-11 h-11 flex items-center justify-center flex-shrink-0 active:scale-[0.95] transition disabled:opacity-40"
           aria-label="Send"

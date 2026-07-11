@@ -7,11 +7,12 @@ import React, { useState } from "react";
 import {
   ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks, Target,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
-  Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3,
+  Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3, CreditCard, Gift, Sparkles,
 } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs, fmtCompact } from "../lib/time";
-import { updateUserProfile, claimUsername, setActiveMascot } from "../lib/firestore";
+import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from "../lib/firestore";
+import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
 
@@ -484,6 +485,137 @@ function HowToUsePanel({ onBack }) {
   );
 }
 
+/* ---------------------------------- Billing ------------------------------------ */
+
+function PlanBadge({ plan }) {
+  const color = plan === PLAN.MAX ? COL.gold : plan === PLAN.TEAM ? COL.violet : COL.sub;
+  return (
+    <span
+      className="font-body text-[11px] font-semibold px-2 py-1 rounded-full"
+      style={{ background: `${color}22`, color }}
+    >
+      {PLAN_LABELS[plan]}
+    </span>
+  );
+}
+
+// Static reference table shown at the bottom of the panel — sourced
+// directly from AI_MESSAGE_LIMITS in lib/billing.js so it can never drift
+// from the actual enforced limits.
+const PLAN_LIMIT_ROWS = [
+  { plan: PLAN.FREE, limit: getAiMessageLimit(null) },
+  { plan: PLAN.TEAM, limit: getAiMessageLimit({ plan: PLAN.TEAM, expiresAt: { toMillis: () => Date.now() + 86400000 } }) },
+  { plan: PLAN.MAX, limit: getAiMessageLimit({ plan: PLAN.MAX, expiresAt: { toMillis: () => Date.now() + 86400000 } }) },
+];
+
+function BillingPanel({ uid, billing, onBack }) {
+  const effectivePlan = getEffectivePlan(billing);
+  const messageLimit = getAiMessageLimit(billing);
+  const daysRemaining = getDaysRemaining(billing);
+
+  const [code, setCode] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemError, setRedeemError] = useState("");
+  const [redeemSuccess, setRedeemSuccess] = useState("");
+
+  const handleRedeem = async (e) => {
+    e.preventDefault();
+    const trimmed = code.trim();
+    if (!trimmed || redeeming) return;
+    setRedeeming(true);
+    setRedeemError("");
+    setRedeemSuccess("");
+    try {
+      const { plan, days } = await redeemCode(uid, trimmed);
+      setRedeemSuccess(`${PLAN_LABELS[plan]} plan activated for ${days} day${days === 1 ? "" : "s"}!`);
+      setCode("");
+    } catch (err) {
+      setRedeemError(err.message || "Couldn't redeem that code.");
+    } finally {
+      setRedeeming(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PanelHeader title="Billing" onBack={onBack} />
+
+      <div style={neu(false, 20)} className="p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(123,110,246,0.15)" }}>
+              <CreditCard size={17} color={COL.violet} />
+            </div>
+            <div>
+              <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Current plan</div>
+              <div className="font-body text-xs" style={{ color: COL.sub }}>
+                {messageLimit} AI messages / day
+              </div>
+            </div>
+          </div>
+          <PlanBadge plan={effectivePlan} />
+        </div>
+
+        {effectivePlan !== PLAN.FREE && (
+          <div className="font-body text-xs" style={{ color: COL.sub }}>
+            {daysRemaining > 0
+              ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining`
+              : "Expiring soon"}
+          </div>
+        )}
+      </div>
+
+      <div style={neu(false, 20)} className="p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Gift size={16} color={COL.gold} />
+          <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Redeem a code</div>
+        </div>
+        <div className="font-body text-xs" style={{ color: COL.sub }}>
+          Have a Team or Max redeem code? Enter it below to activate — or extend — your plan.
+        </div>
+
+        <form onSubmit={handleRedeem} className="flex flex-col gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="e.g. FOCUSTEAM30XYZ123"
+            autoCapitalize="characters"
+            className="w-full px-3 py-2.5 font-body text-sm rounded-xl outline-none"
+            style={{ background: COL.input, color: COL.ink }}
+          />
+          <button
+            type="submit"
+            disabled={redeeming || !code.trim()}
+            style={{
+              borderRadius: 12,
+              background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+              boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+              color: "#FFFFFF",
+            }}
+            className="py-2.5 font-body font-semibold text-sm active:scale-[0.98] transition disabled:opacity-60 flex items-center justify-center gap-1.5"
+          >
+            {redeeming ? <Loader2 size={14} color="#fff" className="animate-spin" /> : <Sparkles size={14} color="#fff" />}
+            {redeeming ? "Redeeming…" : "Redeem code"}
+          </button>
+        </form>
+
+        {redeemError && <div className="font-body text-[11px]" style={{ color: COL.coral }}>{redeemError}</div>}
+        {redeemSuccess && <div className="font-body text-[11px]" style={{ color: COL.mint }}>{redeemSuccess}</div>}
+      </div>
+
+      <div style={neu(true, 18)} className="p-4 flex flex-col gap-1.5">
+        <div className="font-display font-semibold text-xs mb-1" style={{ color: COL.ink }}>Plan limits</div>
+        {PLAN_LIMIT_ROWS.map(({ plan, limit }) => (
+          <div key={plan} className="flex items-center justify-between font-body text-xs" style={{ color: COL.sub }}>
+            <span>{PLAN_LABELS[plan]}</span>
+            <span>{limit} messages / day</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------- Change password ------------------------------- */
 
 function ChangePasswordPanel({ user, onBack }) {
@@ -550,10 +682,11 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, studyReminder, isMedianApp = false, onLogout }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, onLogout }) {
   const [section, setSection] = useState(null); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
+  if (section === "billing") return <BillingPanel uid={user.uid} billing={billing} onBack={() => setSection(null)} />;
   if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} onBack={() => setSection(null)} />;
   if (section === "notifications") {
     return (
@@ -593,6 +726,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
       <SectionLabel>Your account</SectionLabel>
       <MenuRow icon={Database} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Your data" onClick={() => setSection("data")} />
       <MenuRow icon={BarChart3} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Weekly Analytics" onClick={() => setSection("analytics")} />
+      <MenuRow icon={CreditCard} iconBg="rgba(63,207,163,0.15)" iconColor={COL.mint} label="Billing" onClick={() => setSection("billing")} />
 
       <SectionLabel>Support</SectionLabel>
       <MenuRow icon={HelpCircle} iconBg="rgba(255,122,133,0.15)" iconColor={COL.coral} label="How to use app" onClick={() => setSection("howto")} />
