@@ -46,5 +46,22 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && resource.data.uid == request.auth.uid;
     }
+
+    // redeemCodes/{CODE} = { plan, days, redeemedBy, redeemedAt }
+    // One doc per redeemed code — its mere existence is what makes a code
+    // "already used". `allow create` in Firestore rules only ever matches
+    // when no document currently lives at that path, so a code that's
+    // already been claimed can never be claimed again: the second attempt
+    // is treated as an "update" instead, which is blocked below. This holds
+    // even for two users racing to redeem the same code simultaneously.
+    match /redeemCodes/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.redeemedBy == request.auth.uid
+        && request.resource.data.plan in ["team", "max"]
+        && request.resource.data.days is number
+        && request.resource.data.days > 0;
+      allow update, delete: if false;
+    }
   }
 }
