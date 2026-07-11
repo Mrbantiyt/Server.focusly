@@ -18,16 +18,6 @@ export const openaiChatBodySchema = z.object({
   imageBase64: z.string().startsWith("data:image/").optional(), // legacy single-image field
 });
 
-// --- api/supabase-upload.js ---
-export const uploadBodySchema = z.object({
-  imageBase64: z.string().startsWith("data:", "imageBase64 must be a data URL"),
-  folder: z
-    .string()
-    .regex(/^[a-zA-Z0-9_-]{1,40}$/, "invalid folder name")
-    .optional()
-    .default("goals"),
-});
-
 // Small helper: validates `req.body` against a schema and returns either
 // { data } or writes a 400 response and returns { error: true }. Keeps the
 // call site in each handler to two lines.
