@@ -1,11 +1,12 @@
 // src/lib/firestore.js
 import {
   doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc, getDocs, writeBatch,
-  onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment,
+  onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment, Timestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { deleteMediaFiles } from "./media";
 import { dayKeyFor } from "./time";
+import { parseRedeemCode } from "./billing";
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
 
@@ -614,3 +615,79 @@ export async function deleteNote(uid, noteId) {
   const ref = doc(db, "users", uid, "notes", noteId);
   await deleteDoc(ref);
 }
+
+/* --------------------------------- billing --------------------------------- */
+// users/{uid}.billing = { plan, activatedAt, expiresAt, lastRedeemedCode }
+// users/{uid}.aiUsage = { dayKey, count }  <- today's "Ask AI" message count,
+//   reset implicitly whenever dayKey no longer matches today (see
+//   incrementAiUsage below) rather than a separate midnight-wipe job.
+//
+// redeemCodes/{CODE} = { plan, days, redeemedBy, redeemedAt } — one doc per
+// redeemed code, doubling as the "has this code already been used" lock.
+// The doc is only ever created, never updated (see firestore.rules), so a
+// transaction race between two users redeeming the same code at the same
+// instant still only lets exactly one of them win.
+
+// Validates + redeems a code for `uid`. Throws a user-facing Error on any
+// failure (bad format, already redeemed). On success, activates/extends the
+// user's plan and returns { plan, days }.
+export async function redeemCode(uid, rawCode) {
+  const parsed = parseRedeemCode(rawCode);
+  if (!parsed) {
+    throw new Error("That doesn't look like a valid redeem code.");
+  }
+  const { code, plan, days } = parsed;
+
+  const codeRef = doc(db, "redeemCodes", code);
+  const userRef = doc(db, "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    // ALL reads must happen before any writes in a Firestore transaction.
+    const codeSnap = await tx.get(codeRef);
+    if (codeSnap.exists()) {
+      throw new Error("This redeem code has already been used.");
+    }
+    const userSnap = await tx.get(userRef);
+    const existingBilling = userSnap.exists() ? userSnap.data().billing : null;
+
+    // If the user already has time left on the SAME plan, stack the new
+    // days on top of the remaining time instead of resetting the clock —
+    // redeeming two 30-day Team codes back to back should give 60 days,
+    // not just replace one 30-day window with another.
+    const now = Date.now();
+    const existingExpiresMs = existingBilling?.expiresAt?.toMillis ? existingBilling.expiresAt.toMillis() : 0;
+    const baseMs = existingBilling?.plan === plan && existingExpiresMs > now ? existingExpiresMs : now;
+    const expiresAtMs = baseMs + days * 24 * 60 * 60 * 1000;
+
+    tx.set(codeRef, { plan, days, redeemedBy: uid, redeemedAt: serverTimestamp() });
+    tx.set(
+      userRef,
+      {
+        billing: {
+          plan,
+          activatedAt: serverTimestamp(),
+          expiresAt: Timestamp.fromMillis(expiresAtMs),
+          lastRedeemedCode: code,
+        },
+      },
+      { merge: true }
+    );
+  });
+
+  return { plan, days };
+}
+
+// Bumps today's Ask-AI message counter by 1, transparently rolling it over
+// to a fresh count of 1 if `dayKey` has moved on since the last message
+// (no separate midnight-reset job needed — the rollover happens lazily,
+// the same way the redeem code stacking above does).
+export async function incrementAiUsage(uid, dayKey) {
+  const ref = doc(db, "users", uid);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const usage = snap.exists() ? snap.data().aiUsage : null;
+    const count = usage && usage.dayKey === dayKey ? (usage.count || 0) + 1 : 1;
+    tx.set(ref, { aiUsage: { dayKey, count } }, { merge: true });
+  });
+}
+
