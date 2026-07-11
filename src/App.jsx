@@ -53,8 +53,8 @@ export default function App() {
   // Tasks tab was removed and replaced by Notes. `tasks` is kept as a
   // stable empty array (not lifted from a hook anymore) purely so the
   // existing Dashboard/Settings stat panels — which still read a `tasks`
-  // array for their lifetime "goals completed" counters — don't need a
-  // separate prop-shape change. Live task tracking (and its once-a-second
+  // array for their "today's tasks" counter — don't need a separate
+  // prop-shape change. Live task tracking (and its once-a-second
   // re-render tick) is gone for good, which is also a real perf win.
   const tasks = EMPTY_TASKS;
   const { notes } = useNotes(user?.uid);
