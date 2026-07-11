@@ -13,6 +13,9 @@ service cloud.firestore {
       match /aiChat/{docId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
+      match /notes/{noteId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
       // Sent by the admin panel via the Admin SDK (bypasses these rules
       // entirely for that write). Client-side, a user may only read their
       // own notifications and update/delete them (marking read, claiming
@@ -47,21 +50,31 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid;
     }
 
-    // redeemCodes/{CODE} = { plan, days, redeemedBy, redeemedAt }
-    // One doc per redeemed code — its mere existence is what makes a code
-    // "already used". `allow create` in Firestore rules only ever matches
-    // when no document currently lives at that path, so a code that's
-    // already been claimed can never be claimed again: the second attempt
-    // is treated as an "update" instead, which is blocked below. This holds
-    // even for two users racing to redeem the same code simultaneously.
+    // redeemCodes/{CODE} = { plan, days, used, createdAt, redeemedBy, redeemedAt }
+    // Every doc here is provisioned AHEAD OF TIME by an admin using the
+    // Firebase Admin SDK (see scripts/generate-redeem-codes.js), which
+    // bypasses these rules entirely for that write — that's what makes a
+    // code "authorized" in the first place. A code is never valid merely
+    // because a string matches some expected shape; it's valid only if a
+    // document for that exact code exists here.
+    //
+    // Clients can NEVER create a redeemCodes doc (allow create: if false),
+    // so nobody can self-issue their own code, however code-shaped it is.
+    // The only write a client may make is flipping a single existing code
+    // from used:false to used:true when claiming it for themselves — and
+    // even then, the plan/days on the doc must stay exactly as the admin
+    // set them, so a client can't grant itself a different plan or a
+    // longer validity period while "redeeming" a real code.
     match /redeemCodes/{code} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null
+      allow create: if false;
+      allow update: if request.auth != null
+        && resource.data.used == false
+        && request.resource.data.used == true
         && request.resource.data.redeemedBy == request.auth.uid
-        && request.resource.data.plan in ["team", "max"]
-        && request.resource.data.days is number
-        && request.resource.data.days > 0;
-      allow update, delete: if false;
+        && request.resource.data.plan == resource.data.plan
+        && request.resource.data.days == resource.data.days;
+      allow delete: if false;
     }
   }
 }

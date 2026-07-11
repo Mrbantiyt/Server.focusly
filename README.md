@@ -38,7 +38,6 @@ users/{uid}                      → { name, email, photoURL, lastLogin }
 users/{uid}/studyDays/{YYYY-MM-DD} → { seconds }   // one doc per "study day" (resets 4am)
 users/{uid}/tasks/{taskId}       → {
   title, tag, elapsed, running, done, createdAt,
-  goals: [{ id, text, done, photoPath }]   // photoPath = Telegram file path, not a raw URL
 }
 ```
 
@@ -50,12 +49,11 @@ users/{uid}/tasks/{taskId}       → {
   pichhle din ka maanta hai.
 - **Calendar + Graph**: ab ek hi tab me hain — Calendar ke neeche graph
   (7-day / 1-month toggle) dikhta hai.
-- **Tasks + Goals**: task khol kar usme "goals" (sub-steps) add karo. Har goal
-  ek photo upload karne se complete hota hai (proof). Jaise hi task ke saare
-  goals complete ho jaate hain, task khud-ba-khud complete ho jaata hai. Bina
-  goals wale tasks purane tarah manual ✓ se complete hote hain.
+- **Tasks**: task complete manual ✓ se hota hai. (Pehle iske andar "goals"
+  sub-steps + proof-photo feature bhi tha, jo ab hata diya gaya hai — is app
+  me Goals system use nahi hota.)
 - **Settings tab** (bottom-nav ka aakhri icon ab settings hai, graph nahi):
-  profile photo/name, total study time, tasks completed, goals completed,
+  profile photo/name, total study time, tasks completed,
   aur logout.
 
 ## AI Chat + photo-upload storage — ARCHITECTURE
@@ -66,7 +64,7 @@ serverless functions** (`api/`) beech me hain:
 | Function                | Kaam |
 |--------------------------|------|
 | `openai-chat.js`         | Chat text + notes-photo ko GPT-4o-mini (vision) ko forward karta hai |
-| `telegram-upload.js`     | Goal-proof photo Telegram bot ke via ek private chat me upload karta hai, sirf `file_path` return karta hai (poora URL nahi — usme bot token hota) |
+| `telegram-upload.js`     | Photo Telegram bot ke via ek private chat me upload karta hai, sirf `file_path` return karta hai (poora URL nahi — usme bot token hota) |
 | `telegram-file.js`       | Us `file_path` ko frontend ke liye serve/proxy karta hai — token yahin server-side rehta hai |
 
 ### Keys kaha daalein
