@@ -9,9 +9,13 @@
 //   UPSTASH_REDIS_REST_URL
 //   UPSTASH_REDIS_REST_TOKEN
 //
-// If those env vars are missing, this fails OPEN (allows the request) so a
-// misconfigured env doesn't take the whole app down — but it logs a
-// warning so you notice in the Vercel function logs.
+// If those env vars are missing:
+//   - in production (VERCEL_ENV === "production"), this fails CLOSED
+//     (blocks the request) — an unconfigured limiter in prod is a security
+//     gap, not a convenience.
+//   - anywhere else (local dev, preview deploys), it fails OPEN so you're
+//     not forced to set up Upstash just to run `vite dev`.
+// Either way it logs a warning so you notice in the Vercel function logs.
 
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
@@ -50,8 +54,16 @@ function getLimiter(name, requests, windowSeconds) {
 export async function checkRateLimit(name, identifier, { requests = 15, windowSeconds = 60 } = {}) {
   const limiter = getLimiter(name, requests, windowSeconds);
   if (!limiter) {
-    // Fail open when not configured.
-    return { success: true, remaining: requests, reset: 0, configured: false };
+    const isProd = process.env.VERCEL_ENV === "production";
+    // Fail closed in production (an unconfigured limiter shouldn't mean
+    // "no limit" on a live app); fail open elsewhere so local/preview dev
+    // doesn't require Upstash to be set up.
+    return {
+      success: !isProd,
+      remaining: isProd ? 0 : requests,
+      reset: 0,
+      configured: false,
+    };
   }
   const result = await limiter.limit(identifier);
   return { ...result, configured: true };
