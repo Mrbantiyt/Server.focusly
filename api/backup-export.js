@@ -52,7 +52,13 @@ async function exportUserSubcollections(db, uid) {
 async function handler(req, res) {
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  // Fail CLOSED: if CRON_SECRET isn't configured, refuse rather than allow
+  // every request through unauthenticated (this endpoint dumps all user data).
+  if (!cronSecret) {
+    console.error("[backup-export] CRON_SECRET not configured on server — refusing request.");
+    return res.status(500).json({ error: "Server misconfiguration" });
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

@@ -18,9 +18,38 @@ import { openaiChatBodySchema, validateBody } from "./_lib/schemas.js";
 import { withSentry } from "./_lib/sentry.js";
 
 // Primary provider.
-const AI_API_URL = process.env.AI_API_BASE_URL || "https://api.bluesminds.com/v1/chat/completions";
-const AI_MODEL = process.env.AI_MODEL || "gpt-5.5";
+let AI_API_URL = process.env.AI_API_BASE_URL || "https://api.bluesminds.com/v1/chat/completions";
+let AI_MODEL = process.env.AI_MODEL || "gpt-5.5";
 const AI_API_KEY = process.env.AI_API_KEY;
+
+// Gemini's *native* REST API (generativelanguage.googleapis.com/v1beta/models/...
+// :generateContent) does NOT understand "Authorization: Bearer <key>" — it
+// needs the key as a "key=" query param or an "x-goog-api-key" header, and a
+// totally different request/response shape ({ contents: [...] } instead of
+// { messages: [...] }). This proxy always sends OpenAI-shaped requests, so
+// if AI_API_BASE_URL is ever set to that native URL by mistake, every call
+// fails with a confusing "expected OAuth 2 access token" error even though
+// the key itself is fine.
+//
+// Google *also* publishes an OpenAI-compatible endpoint that accepts
+// exactly the request shape this proxy sends
+// (https://ai.google.dev/gemini-api/docs/openai). So if we detect the
+// native-style URL, auto-correct to the compatible one instead of failing.
+const GEMINI_ALIAS_MAP = { "gemini-flash-latest": "gemini-2.5-flash", "gemini-pro-latest": "gemini-2.5-pro" };
+
+if (AI_API_URL.includes("generativelanguage.googleapis.com") && !AI_API_URL.includes("/openai/")) {
+  const nativeModelMatch = AI_API_URL.match(/\/models\/([^/:]+):/);
+  if (nativeModelMatch && (!process.env.AI_MODEL || process.env.AI_MODEL === "gpt-5.5")) {
+    AI_MODEL = GEMINI_ALIAS_MAP[nativeModelMatch[1]] || nativeModelMatch[1];
+  }
+  AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+}
+
+// Also normalize a "-latest" alias if it was set directly via AI_MODEL while
+// already pointed at Gemini's OpenAI-compatible endpoint.
+if (AI_API_URL.includes("generativelanguage.googleapis.com/v1beta/openai") && GEMINI_ALIAS_MAP[AI_MODEL]) {
+  AI_MODEL = GEMINI_ALIAS_MAP[AI_MODEL];
+}
 
 // Optional fallback provider — used only if the primary call fails (network
 // error, 5xx, timeout). Leave AI_API_KEY_FALLBACK unset to disable this;
@@ -84,8 +113,9 @@ async function handler(req, res) {
   }
 
   // Rate limit AFTER auth so we key on a real, verified uid (can't be spoofed).
-  const rl = await checkRateLimit("openai-chat", decoded.uid, { requests: 15, windowSeconds: 60 });
+  const rl = await checkRateLimit("openai-chat", decoded.uid, { requests: 10, windowSeconds: 60 });
   if (!rl.success) {
+    res.setHeader("Retry-After", "60");
     return res.status(429).json({ error: "Too many requests — please slow down and try again shortly." });
   }
 

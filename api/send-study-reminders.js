@@ -68,7 +68,13 @@ export default async function handler(req, res) {
   // secret as a Bearer token.
   const authHeader = req.headers.authorization;
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  // Fail CLOSED: if CRON_SECRET isn't configured, refuse rather than allow
+  // every request through unauthenticated.
+  if (!cronSecret) {
+    console.error("[send-study-reminders] CRON_SECRET not configured on server — refusing request.");
+    return res.status(500).json({ error: "Server misconfiguration" });
+  }
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 

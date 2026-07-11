@@ -20,6 +20,7 @@
 
 import { initializeApp, cert, getApps } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { checkRateLimit } from "./_lib/rateLimit.js";
 
 function getAdminDb() {
   if (!getApps().length) {
@@ -35,9 +36,25 @@ function normalizeUsername(username) {
   return (username || "").trim().replace(/^@/, "").toLowerCase();
 }
 
+// This endpoint is unauthenticated by necessity (username lookup happens
+// before login), so it's rate-limited by IP instead of uid — otherwise it's
+// an open username -> email-existence oracle a bot could hammer.
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) return forwarded.split(",")[0].trim();
+  return req.socket?.remoteAddress || "unknown";
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const ip = getClientIp(req);
+  const rl = await checkRateLimit("resolve-username", ip, { requests: 5, windowSeconds: 60 });
+  if (!rl.success) {
+    res.setHeader("Retry-After", "60");
+    return res.status(429).json({ error: "Too many requests — please slow down and try again shortly." });
   }
 
   const key = normalizeUsername(req.body?.username);
