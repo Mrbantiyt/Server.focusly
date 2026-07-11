@@ -4,9 +4,9 @@ import {
   onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment, Timestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { deleteMediaFiles } from "./media";
 import { dayKeyFor } from "./time";
-import { parseRedeemCode } from "./billing";
+import { PLAN } from "./billing";
+
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
 
@@ -46,13 +46,6 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
 
 // users/{uid}/tasks/{taskId} = {
 //   title, tag, elapsed, running, startedAt, done, createdAt,
-//   goals: [{ id, text, done, photoPath }]   <- photoPath is a Supabase
-//                                               Storage object path (see
-//                                               src/lib/media.js), resolved
-//                                               to a public CDN URL via
-//                                               mediaSrc() — the bucket is
-//                                               public, so no token needs
-//                                               to stay server-side here.
 // }
 // `elapsed` is the banked total (seconds) as of the last time the task was
 // paused/flushed. While `running` is true, `startedAt` (a millisecond
@@ -62,12 +55,11 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
 // stays correct even if the JS timer itself gets throttled/paused while the
 // screen is off or the app is backgrounded — the moment the app wakes back
 // up it recomputes from real elapsed time instead of having lost ticks.
-// `done` is derived automatically: true once every goal in `goals` is done
-// (a task with zero goals is completed manually via the checkmark instead).
+// `done` is toggled manually via the checkmark.
 export function watchTasks(uid, cb) {
   const ref = collection(db, "users", uid, "tasks");
   return onSnapshot(ref, (snap) => {
-    const tasks = snap.docs.map((d) => ({ id: d.id, goals: [], ...d.data() }));
+    const tasks = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     tasks.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
     cb(tasks);
   });
@@ -76,7 +68,7 @@ export function watchTasks(uid, cb) {
 export async function addTask(uid, title, tag = "Medium") {
   const ref = collection(db, "users", uid, "tasks");
   await addDoc(ref, {
-    title, tag, done: false, elapsed: 0, running: false, startedAt: null, goals: [],
+    title, tag, done: false, elapsed: 0, running: false, startedAt: null,
     createdAt: serverTimestamp(),
   });
   // Fire-and-forget lifetime counter bump — Settings' "Total tasks" reads
@@ -94,18 +86,15 @@ export async function updateTask(uid, taskId, patch) {
   await updateDoc(ref, patch);
 }
 
-// Deletes a task, and any goal-proof photos it had, from storage too —
-// so removing a task doesn't leave orphaned images behind in Supabase.
-// `taskData` is optional: pass the task object if you already have it
-// (e.g. from the live tasks list) to avoid an extra read; otherwise this
-// fetches it itself so photo cleanup still happens either way.
+// Deletes a task. `taskData` is optional: pass the task object if you
+// already have it (e.g. from the live tasks list) to avoid an extra read.
 //
 // IMPORTANT: this credits the task's completion status into the lifetime
 // taskStats counters BEFORE deleting it — exactly like runMidnightTaskReset
 // does for the automatic daily wipe. Without this, manually deleting a
-// task would silently erase it from "Total tasks"/"Goals completed" in
-// Settings, even though those are meant to be permanent, never-decreasing
-// counters (same idea as "Total study time").
+// task would silently erase it from "Total tasks" in Settings, even though
+// that's meant to be a permanent, never-decreasing counter (same idea as
+// "Total study time").
 export async function deleteTask(uid, taskId, taskData = null) {
   const ref = doc(db, "users", uid, "tasks", taskId);
 
@@ -114,26 +103,18 @@ export async function deleteTask(uid, taskId, taskData = null) {
     const snap = await getDoc(ref);
     task = snap.exists() ? { id: snap.id, ...snap.data() } : null;
   }
-  const goals = task?.goals || [];
-  const photoPaths = goals.map((g) => g.photoPath).filter(Boolean);
 
   // Credit lifetime counters for what's about to be deleted, same as the
   // midnight reset does for the tasks it wipes.
   const wasCompleted = !!task?.done;
-  const goalsDoneCount = goals.filter((g) => g.done).length;
-  if (wasCompleted || goalsDoneCount > 0) {
+  if (wasCompleted) {
     const statsRef = doc(db, "users", uid);
     await setDoc(statsRef, {
-      "taskStats.totalCompleted": increment(wasCompleted ? 1 : 0),
-      "taskStats.totalGoalsCompleted": increment(goalsDoneCount),
+      "taskStats.totalCompleted": increment(1),
     }, { merge: true });
   }
 
   await deleteDoc(ref);
-
-  if (photoPaths.length > 0) {
-    await deleteMediaFiles(photoPaths);
-  }
 }
 
 // Runs once per calendar day (called from useTasks, guarded by
@@ -183,21 +164,15 @@ export async function runMidnightTaskReset(uid, todayKey) {
   if (docsToWipe.length === 0) return;
 
   let completedCount = 0;
-  let goalsCompletedCount = 0;
-  const photoPaths = [];
   for (const d of docsToWipe) {
     const t = d.data();
     if (t.done) completedCount++;
-    const goals = t.goals || [];
-    goalsCompletedCount += goals.filter((g) => g.done).length;
-    goals.forEach((g) => { if (g.photoPath) photoPaths.push(g.photoPath); });
   }
 
   // Credit lifetime counters for what's about to be deleted...
-  if (completedCount > 0 || goalsCompletedCount > 0) {
+  if (completedCount > 0) {
     await setDoc(statsRef, {
       "taskStats.totalCompleted": increment(completedCount),
-      "taskStats.totalGoalsCompleted": increment(goalsCompletedCount),
     }, { merge: true });
   }
 
@@ -209,72 +184,6 @@ export async function runMidnightTaskReset(uid, todayKey) {
     for (const d of docsToWipe.slice(i, i + 450)) batch.delete(d.ref);
     await batch.commit();
   }
-
-  // Finally, clean up every goal-proof photo that belonged to today's
-  // (now-deleted) tasks, so they don't sit in Supabase forever as orphaned
-  // files with no Firestore doc pointing at them anymore. Chunked the same
-  // way as the delete-endpoint's own per-call cap.
-  for (let i = 0; i < photoPaths.length; i += 200) {
-    await deleteMediaFiles(photoPaths.slice(i, i + 200));
-  }
-}
-
-// Add a new goal (sub-step) to a task.
-export async function addGoal(uid, taskId, currentGoals, text) {
-  const goal = { id: `${Date.now()}`, text, done: false, photoPath: null };
-  const goals = [...(currentGoals || []), goal];
-  await updateTask(uid, taskId, { goals, done: false });
-  return goals;
-}
-
-// Mark a goal done/undone. When marking done, `photoPath` (from
-// uploadProofPhoto) is attached as proof. The parent task auto-completes
-// once every goal is done, and auto-reopens if any goal is undone.
-// `taskState.elapsed` (passed in from Tasks.jsx) is already the LIVE
-// elapsed value for a running task (see useTasks.js's liveTasks mapping) —
-// it already accounts for time since `startedAt`. So when the task
-// auto-completes we just bank it as-is; adding (Date.now() - startedAt) on
-// top again would double-count the current run.
-export async function setGoalDone(uid, taskId, currentGoals, goalId, isDone, photoPath = null, taskState = {}) {
-  const prevGoal = (currentGoals || []).find((g) => g.id === goalId);
-  const oldPhotoPath = prevGoal?.photoPath || null;
-
-  const goals = (currentGoals || []).map((g) =>
-    g.id === goalId ? { ...g, done: isDone, photoPath: isDone ? photoPath : null } : g
-  );
-  const allDone = goals.length > 0 && goals.every((g) => g.done);
-
-  const patch = { goals, done: allDone };
-  if (allDone && taskState.running) {
-    patch.elapsed = Math.floor(taskState.elapsed || 0);
-    patch.running = false;
-    patch.startedAt = null;
-  }
-
-  await updateTask(uid, taskId, patch);
-
-  // If this goal had a different photo before (unmarking it, or replacing
-  // it with a fresh proof photo), delete the old one from storage — it's
-  // no longer referenced by anything in Firestore, so leaving it would
-  // just be an orphaned file taking up storage forever.
-  if (oldPhotoPath && oldPhotoPath !== photoPath) {
-    await deleteMediaFiles([oldPhotoPath]);
-  }
-
-  return goals;
-}
-
-export async function removeGoal(uid, taskId, currentGoals, goalId) {
-  const removed = (currentGoals || []).find((g) => g.id === goalId);
-  const goals = (currentGoals || []).filter((g) => g.id !== goalId);
-  const allDone = goals.length > 0 && goals.every((g) => g.done);
-  await updateTask(uid, taskId, { goals, done: allDone });
-
-  if (removed?.photoPath) {
-    await deleteMediaFiles([removed.photoPath]);
-  }
-
-  return goals;
 }
 
 /* -------------------------------- gamification ---------------------------------- */
@@ -319,14 +228,13 @@ export function watchGameStats(uid, cb) {
       streakDays: d.streakDays || {},
       ownedItems: d.ownedItems || [],
       activeMascot: d.activeMascot || "default",
-      // Lifetime task/goal counters. These survive the daily midnight task
-      // wipe (see runMidnightTaskReset below) — the live `tasks` collection
-      // only ever holds *today's* tasks, so "Total tasks" in Settings has to
+      // Lifetime task counters. These survive the daily midnight task wipe
+      // (see runMidnightTaskReset below) — the live `tasks` collection only
+      // ever holds *today's* tasks, so "Total tasks" in Settings has to
       // come from this running total instead of tasks.length.
       taskStats: {
         totalCreated: d.taskStats?.totalCreated || 0,
         totalCompleted: d.taskStats?.totalCompleted || 0,
-        totalGoalsCompleted: d.taskStats?.totalGoalsCompleted || 0,
         lastResetDay: d.taskStats?.lastResetDay || null,
       },
     });
@@ -622,31 +530,50 @@ export async function deleteNote(uid, noteId) {
 //   reset implicitly whenever dayKey no longer matches today (see
 //   incrementAiUsage below) rather than a separate midnight-wipe job.
 //
-// redeemCodes/{CODE} = { plan, days, redeemedBy, redeemedAt } — one doc per
-// redeemed code, doubling as the "has this code already been used" lock.
-// The doc is only ever created, never updated (see firestore.rules), so a
-// transaction race between two users redeeming the same code at the same
-// instant still only lets exactly one of them win.
+// redeemCodes/{CODE} = { plan, days, used, createdAt, redeemedBy, redeemedAt }
+// — one doc PER ADMIN-ISSUED CODE, provisioned ahead of time (see
+// scripts/generate-redeem-codes.js) using the Firebase Admin SDK, which
+// bypasses client security rules entirely. Regular clients can never create
+// documents in this collection (see firestore.rules) — they can only flip
+// an existing code's `used` flag from false to true, and only once. This is
+// what makes a code "authorized": redemption succeeds only if a document
+// for that exact code already exists here, never merely because a string
+// happens to match some expected pattern.
 
-// Validates + redeems a code for `uid`. Throws a user-facing Error on any
-// failure (bad format, already redeemed). On success, activates/extends the
-// user's plan and returns { plan, days }.
+// Redeems an admin-issued code for `uid`. Throws a user-facing Error if the
+// code doesn't exist in the authorized redeemCodes collection, or has
+// already been used. On success, activates/extends the user's plan (using
+// the plan/days stored on the code doc — never anything parsed from the
+// code string itself) and returns { plan, days }.
 export async function redeemCode(uid, rawCode) {
-  const parsed = parseRedeemCode(rawCode);
-  if (!parsed) {
-    throw new Error("That doesn't look like a valid redeem code.");
+  const code = (rawCode || "").trim().toUpperCase();
+  if (!code) {
+    throw new Error("Please enter a redeem code.");
   }
-  const { code, plan, days } = parsed;
 
   const codeRef = doc(db, "redeemCodes", code);
   const userRef = doc(db, "users", uid);
 
-  await runTransaction(db, async (tx) => {
+  const result = await runTransaction(db, async (tx) => {
     // ALL reads must happen before any writes in a Firestore transaction.
     const codeSnap = await tx.get(codeRef);
-    if (codeSnap.exists()) {
+    // The code must already exist as an admin-provisioned document —
+    // format alone (however code-shaped) is never sufficient.
+    if (!codeSnap.exists()) {
+      throw new Error("That redeem code isn't valid.");
+    }
+    const codeData = codeSnap.data();
+    if (codeData.used) {
       throw new Error("This redeem code has already been used.");
     }
+    const { plan, days } = codeData;
+    if ((plan !== PLAN.TEAM && plan !== PLAN.MAX) || !Number.isFinite(days) || days <= 0) {
+      // Defensive only — a well-formed admin-issued code should never hit
+      // this, but never trust stored data blindly for something that
+      // grants paid access.
+      throw new Error("That redeem code isn't valid.");
+    }
+
     const userSnap = await tx.get(userRef);
     const existingBilling = userSnap.exists() ? userSnap.data().billing : null;
 
@@ -659,7 +586,10 @@ export async function redeemCode(uid, rawCode) {
     const baseMs = existingBilling?.plan === plan && existingExpiresMs > now ? existingExpiresMs : now;
     const expiresAtMs = baseMs + days * 24 * 60 * 60 * 1000;
 
-    tx.set(codeRef, { plan, days, redeemedBy: uid, redeemedAt: serverTimestamp() });
+    // Update (never create) — flips used:false -> used:true. See
+    // firestore.rules: this is the only write clients are allowed to make
+    // to this collection, and it can only ever happen once per code.
+    tx.update(codeRef, { used: true, redeemedBy: uid, redeemedAt: serverTimestamp() });
     tx.set(
       userRef,
       {
@@ -672,9 +602,11 @@ export async function redeemCode(uid, rawCode) {
       },
       { merge: true }
     );
+
+    return { plan, days };
   });
 
-  return { plan, days };
+  return result;
 }
 
 // Bumps today's Ask-AI message counter by 1, transparently rolling it over
