@@ -153,7 +153,7 @@ export default function App() {
                 coming back to the chat tab never showed the answer.
               */}
               <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
-                <Chat user={user} />
+                <Chat user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} />
               </div>
 
               {tab === "notes" && <Notes uid={user.uid} notes={notes} />}
@@ -176,6 +176,7 @@ export default function App() {
                   dayKey={dayKey}
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
+                  billing={profileDoc?.billing}
                   studyReminder={profileDoc?.studyReminder}
                   isMedianApp={isMedianApp()}
                   totalStudySeconds={
