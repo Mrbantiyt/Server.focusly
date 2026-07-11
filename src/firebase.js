@@ -17,7 +17,17 @@ import {
   persistentMultipleTabManager,
 } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Your web app's Firebase configuration.
+//
+// NOTE ON apiKey: this is NOT a secret, even though it looks like one.
+// Firebase web API keys only identify which Firebase project a request
+// belongs to — they don't grant access to anything by themselves. Actual
+// access control is enforced server-side by firestore.rules (see that
+// file) and by Firebase Auth. It's safe and expected for this to be
+// visible in client-side code / browser devtools / your public bundle;
+// Google's own docs confirm this. Do not move this to an env var expecting
+// it to become secret — it won't, and NEXT_PUBLIC_/VITE_-style env vars
+// end up in the client bundle anyway, so nothing would actually change.
 const firebaseConfig = {
   apiKey: "AIzaSyCsrq5ZK-v3HaAfO8kaV0rzfDnodXAq5MA",
   authDomain: "focuslyread.firebaseapp.com",
