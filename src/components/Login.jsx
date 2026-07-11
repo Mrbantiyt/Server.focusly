@@ -206,9 +206,11 @@ function friendlyAuthError(e) {
   const code = e?.code || "";
   if (code.includes("wrong-password") || code.includes("invalid-credential")) return "Incorrect password.";
   if (code.includes("user-not-found")) return "No account found with that email/username.";
+  if (code.includes("user-disabled")) return "This account has been disabled. Contact support if you think this is a mistake.";
   if (code.includes("too-many-requests")) return "Too many attempts. Please try again later.";
   if (code.includes("email-already-in-use")) return "That email is already registered.";
   if (code.includes("weak-password")) return "Password must be at least 6 characters.";
   if (code.includes("invalid-email")) return "That email address looks invalid.";
-  return e.message || "Something went wrong. Please try again.";
+  if (code.includes("network-request-failed")) return "Network error. Check your connection and try again.";
+  return "Something went wrong. Please try again.";
 }

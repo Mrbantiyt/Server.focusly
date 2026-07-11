@@ -332,11 +332,19 @@ function StatTile({ icon: Icon, accent, label, value, note }) {
   );
 }
 
-function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coins, streak, level, onBack }) {
-  // `tasks` only ever contains TODAY's tasks now (they're wiped at
-  // midnight — see runMidnightTaskReset in lib/firestore.js), so this is a
-  // "today" number...
-  const todayTasksDone = tasks.filter((t) => t.done).length;
+function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins, streak, level, billing, onBack }) {
+  const effectivePlan = getEffectivePlan(billing);
+  const planLabel = PLAN_LABELS[effectivePlan];
+  const daysRemaining = getDaysRemaining(billing);
+  const planNote = effectivePlan === PLAN.FREE ? "No active subscription" : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`;
+
+  // Same "this week" window Weekly Analytics uses, so these numbers always
+  // match what's shown there.
+  const thisWeek = buildDailySeconds(history || {}, dayKey, todaySeconds || 0, 7);
+  const weeklyTotal = thisWeek.reduce((s, d) => s + d.seconds, 0);
+  const dailyAverage = weeklyTotal / 7;
+  const bestDay = thisWeek.reduce((best, d) => (d.seconds > (best?.seconds ?? -1) ? d : best), null);
+  const bestDayLabel = bestDay ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
 
   return (
     <div className="flex flex-col gap-5">
@@ -344,10 +352,13 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, coin
       <div className="grid grid-cols-2 gap-3">
         <StatTile icon={Clock} accent={COL.blue} label="Today time" value={fmtHrs(todaySeconds)} />
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
-        <StatTile icon={ListChecks} accent={COL.mint} label="Today's tasks" value={`${todayTasksDone}/${tasks.length}`} note="Resets at midnight" />
+        <StatTile icon={CreditCard} accent={COL.mint} label="Plan" value={planLabel} note={planNote} />
         <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
         <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
         <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
+        <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(weeklyTotal)} note="Last 7 days" />
+        <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(dailyAverage)} note="Per day this week" />
+        <StatTile icon={Flame} accent={COL.coral} label="Best day" value={fmtHrs(bestDay?.seconds || 0)} note={bestDayLabel} />
       </div>
     </div>
   );
@@ -692,7 +703,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
     return (
       <YourDataPanel
         tasks={tasks} taskStats={taskStats} todaySeconds={todaySeconds} totalStudySeconds={totalStudySeconds}
-        coins={coins} streak={streak} level={level} onBack={() => setSection(null)}
+        history={history} dayKey={dayKey} coins={coins} streak={streak} level={level} billing={billing} onBack={() => setSection(null)}
       />
     );
   }
