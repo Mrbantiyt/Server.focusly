@@ -578,7 +578,7 @@ function BillingPanel({ uid, billing, onBack }) {
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="e.g. FOCUSTEAM30XYZ123"
+            placeholder="ENTER YOUR REEDEM CODE"
             autoCapitalize="characters"
             className="w-full px-3 py-2.5 font-body text-sm rounded-xl outline-none"
             style={{ background: COL.input, color: COL.ink }}
