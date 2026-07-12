@@ -8,6 +8,7 @@ import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
 import { useNotifications } from "./hooks/useNotifications";
+import { useLeaderboard } from "./hooks/useLeaderboard";
 import { watchUserProfile } from "./lib/firestore";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -24,6 +25,7 @@ import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
 import NotificationsPanel from "./components/NotificationsPanel";
 import Store, { STORE_ITEMS } from "./components/Store";
+import Leaderboard from "./components/Leaderboard";
 import { AppLoadingSkeleton } from "./components/Skeleton";
 
 const FONT = (
@@ -64,6 +66,15 @@ export default function App() {
   const [showStreak, setShowStreak] = useState(false);
   const [showStore, setShowStore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // Lifetime study seconds across all days (today included), used both by
+  // Settings' "Total study time" stat and to rank this user on the
+  // leaderboard — see the totalStudySeconds prop passed to Settings below
+  // for why `dayKey` is excluded from the history sum (today comes from
+  // the live todaySeconds instead, to avoid double counting).
+  const totalStudySeconds =
+    Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds;
   // When set, Settings mounts straight into that section (e.g. "billing")
   // instead of its main menu — used by the "Upgrade plan" button on the
   // Ask AI time-limit card. Cleared once consumed so navigating to
@@ -101,6 +112,15 @@ export default function App() {
         hasPasswordAuth: user.providerData?.some((p) => p.providerId === "password") || false,
       }
     : null;
+
+  // Keeps this user's public leaderboard/{uid} mirror doc in sync (username,
+  // lifetime study time, streak, level) and, while the Leaderboard page is
+  // open, live-watches the global top-50 list.
+  const { rows: leaderboardRows, loading: leaderboardLoading } = useLeaderboard(
+    user?.uid,
+    { username: profile?.username, totalStudySeconds, streak: gameStats.streak, level: gameStats.level },
+    showLeaderboard
+  );
 
   // If running inside the Median-wrapped native app, capture this device's
   // OneSignal push subscription id so the server-side reminder cron job
@@ -140,6 +160,7 @@ export default function App() {
                 onOpenStreak={() => setShowStreak(true)}
                 onOpenLevel={() => setShowLevel(true)}
                 onOpenStore={() => setShowStore(true)}
+                onOpenLeaderboard={() => setShowLeaderboard(true)}
               />
             </div>
 
@@ -188,9 +209,7 @@ export default function App() {
                   studyReminder={profileDoc?.studyReminder}
                   isMedianApp={isMedianApp()}
                   initialSection={settingsInitialSection}
-                  totalStudySeconds={
-                    Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
-                  }
+                  totalStudySeconds={totalStudySeconds}
                   onLogout={logout}
                 />
               )}
@@ -251,6 +270,14 @@ export default function App() {
           uid={user.uid}
           notifications={notifications}
           onClose={() => setShowNotifications(false)}
+        />
+      )}
+      {showLeaderboard && (
+        <Leaderboard
+          rows={leaderboardRows}
+          loading={leaderboardLoading}
+          myUid={user.uid}
+          onClose={() => setShowLeaderboard(false)}
         />
       )}
     </div>
