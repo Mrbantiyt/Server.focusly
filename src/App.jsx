@@ -14,7 +14,7 @@ import { syncPushSubscription, isMedianApp } from "./lib/median";
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import Chat from "./components/Chat";
+import AskAiExternal from "./components/AskAiExternal";
 import Notes from "./components/Notes";
 import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
@@ -145,15 +145,13 @@ export default function App() {
                 />
               )}
               {/*
-                Chat stays mounted at all times (just hidden via CSS when
-                another tab is active) instead of being conditionally
-                rendered. Previously, switching tabs while the AI was still
-                "Thinking…" unmounted Chat entirely — the in-flight request's
-                result (and the thinking indicator) was then thrown away, so
-                coming back to the chat tab never showed the answer.
+                NoteGPT is embedded here instead of our own AI chat. It's
+                kept mounted at all times (hidden via CSS when another tab
+                is active) just like Chat was, so switching tabs doesn't
+                reload the iframe every time.
               */}
               <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
-                <Chat user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} />
+                <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} />
               </div>
 
               {tab === "notes" && <Notes uid={user.uid} notes={notes} />}
