@@ -2,17 +2,29 @@
 import React, { useState } from "react";
 import { BarChart, Bar, XAxis, ResponsiveContainer, Cell, Tooltip } from "recharts";
 import { COL, neu } from "../theme";
-import { dayKeyFor } from "../lib/time";
+import { dayKeyFor, getWeekStartKey, getMonthStartKey } from "../lib/time";
 
 export default function GraphView({ history, todayKey, todaySeconds }) {
   const [range, setRange] = useState("week");
-  const days = range === "week" ? 7 : 30;
+  const today = new Date();
+
+  // "week" = the fixed Mon -> Sun calendar week containing today (resets
+  // every Monday). "month" = the fixed calendar month containing today,
+  // from the 1st through today (resets on the 1st of each month).
+  let start;
+  if (range === "week") {
+    start = new Date(getWeekStartKey(today) + "T00:00:00");
+  } else {
+    start = new Date(getMonthStartKey(today) + "T00:00:00");
+  }
+  const daysElapsed = Math.floor((today - start) / 86400000) + 1;
+
   const data = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(); d.setDate(d.getDate() - i);
+  for (let i = daysElapsed - 1; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
     const key = dayKeyFor(d);
     const secs = key === todayKey ? todaySeconds : (history[key] || 0);
-    data.push({ label: range === "week" ? "SMTWTFS"[d.getDay()] : d.getDate(), hrs: +(secs / 3600).toFixed(2) });
+    data.push({ label: range === "week" ? "MTWTFSS"[d.getDay() === 0 ? 6 : d.getDay() - 1] : d.getDate(), hrs: +(secs / 3600).toFixed(2) });
   }
   const total = data.reduce((a, b) => a + b.hrs, 0).toFixed(1);
 
@@ -24,14 +36,16 @@ export default function GraphView({ history, todayKey, todaySeconds }) {
           {["week", "month"].map((r) => (
             <button key={r} onClick={() => setRange(r)} className="px-3 py-1.5 rounded-full font-body text-xs"
               style={{ background: range === r ? COL.violet : "transparent", color: range === r ? "#fff" : COL.sub }}>
-              {r === "week" ? "7 days" : "1 month"}
+              {r === "week" ? "This week" : "This month"}
             </button>
           ))}
         </div>
       </div>
       <div style={neu(false, 24)} className="p-5">
         <div className="flex items-center justify-between mb-3">
-          <span className="font-body text-xs" style={{ color: COL.sub }}>{range === "week" ? "Last 7 days" : "Last 30 days"}</span>
+          <span className="font-body text-xs" style={{ color: COL.sub }}>
+            {range === "week" ? "Mon – today (resets Monday)" : "1st – today (resets monthly)"}
+          </span>
           <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>{total}h total</span>
         </div>
         <ResponsiveContainer width="100%" height={200}>

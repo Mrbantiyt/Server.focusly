@@ -5,12 +5,13 @@
 // overlay with a back button, then returns to the same menu.
 import React, { useState } from "react";
 import {
-  ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame, ListChecks,
+  ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
   Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3, CreditCard, Gift, Sparkles, ExternalLink,
+  Trophy,
 } from "lucide-react";
 import { COL, neu } from "../theme";
-import { fmtHrs, fmtCompact } from "../lib/time";
+import { fmtHrs, fmtCompact, getWeekStartKey } from "../lib/time";
 import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from "../lib/firestore";
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
@@ -368,14 +369,16 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, hist
 
 /* --------------------------------- Analytics -------------------------------- */
 
-// Builds a { dayKey: seconds } map for the last `days` days ending today,
-// merging the live `history` (which excludes today) with today's running total.
-function buildDailySeconds(history, dayKey, todaySeconds, days) {
+// Builds a { dayKey, date, seconds } row for every day of the fixed Mon->Sun
+// calendar week that `weekStart` begins. Days after today have seconds = 0
+// (they just haven't happened yet) so the week always renders as 7 bars,
+// and the whole thing resets automatically the moment a new Monday starts.
+function buildWeekDays(history, dayKey, todaySeconds, weekStartKey) {
   const out = [];
-  const today = new Date();
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
+  const start = new Date(weekStartKey + "T00:00:00");
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const seconds = key === dayKey ? todaySeconds : (history[key] || 0);
     out.push({ key, date: d, seconds });
@@ -383,17 +386,20 @@ function buildDailySeconds(history, dayKey, todaySeconds, days) {
   return out;
 }
 
-export function AnalyticsContent({ history, dayKey, todaySeconds, tasks }) {
-  const daily = buildDailySeconds(history || {}, dayKey, todaySeconds || 0, 14);
-  const thisWeek = daily.slice(7, 14);
-  const lastWeek = daily.slice(0, 7);
+export function AnalyticsContent({ history, dayKey, todaySeconds, tasks, myLeaderboardRank }) {
+  const thisWeekStart = getWeekStartKey();
+  const lastWeekStart = getWeekStartKey(new Date(new Date(thisWeekStart + "T00:00:00").getTime() - 86400000));
+
+  const thisWeek = buildWeekDays(history || {}, dayKey, todaySeconds || 0, thisWeekStart);
+  const lastWeek = buildWeekDays(history || {}, dayKey, todaySeconds || 0, lastWeekStart);
 
   const thisWeekTotal = thisWeek.reduce((s, d) => s + d.seconds, 0);
   const lastWeekTotal = lastWeek.reduce((s, d) => s + d.seconds, 0);
-  const avgPerDay = thisWeekTotal / 7;
+  const daysSoFar = thisWeek.filter((d) => d.key <= dayKey).length || 1;
+  const avgPerDay = thisWeekTotal / daysSoFar;
 
   const bestDay = thisWeek.reduce((best, d) => (d.seconds > (best?.seconds ?? -1) ? d : best), null);
-  const bestDayLabel = bestDay ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
+  const bestDayLabel = bestDay && bestDay.seconds > 0 ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
 
   const weekDelta = lastWeekTotal > 0
     ? Math.round(((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100)
@@ -401,16 +407,15 @@ export function AnalyticsContent({ history, dayKey, todaySeconds, tasks }) {
   const weekDeltaLabel = `${weekDelta > 0 ? "+" : ""}${weekDelta}%`;
   const weekDeltaColor = weekDelta > 0 ? COL.mint : weekDelta < 0 ? COL.coral : COL.sub;
 
-  const tasksTotal = (tasks || []).length;
-  const tasksDone = (tasks || []).filter((t) => t.done).length;
-  const completionRate = tasksTotal > 0 ? Math.round((tasksDone / tasksTotal) * 100) : 0;
+  const rankLabel = myLeaderboardRank ? `#${myLeaderboardRank}` : "—";
+  const rankNote = myLeaderboardRank ? "Resets every Monday" : "Study to get ranked";
 
   const maxBar = Math.max(1, ...thisWeek.map((d) => d.seconds));
 
   return (
     <div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-3">
-        <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(thisWeekTotal)} note="Last 7 days" />
+        <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(thisWeekTotal)} note="Mon – today" />
         <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(avgPerDay)} note="Per day this week" />
         <StatTile icon={Flame} accent={COL.coral} label="Best day" value={fmtHrs(bestDay?.seconds || 0)} note={bestDayLabel} />
         <StatTile
@@ -420,11 +425,11 @@ export function AnalyticsContent({ history, dayKey, todaySeconds, tasks }) {
           value={weekDeltaLabel}
           note={`${fmtHrs(lastWeekTotal)} last week`}
         />
-        <StatTile icon={ListChecks} accent={COL.mint} label="Task completion" value={`${completionRate}%`} note={`${tasksDone}/${tasksTotal} today`} />
+        <StatTile icon={Trophy} accent={COL.mint} label="Your rank in leaderboard" value={rankLabel} note={rankNote} />
       </div>
 
       <div style={neu(false, 20)} className="p-4">
-        <div className="font-body text-xs mb-3" style={{ color: COL.sub }}>This week</div>
+        <div className="font-body text-xs mb-3" style={{ color: COL.sub }}>This week (resets Monday)</div>
         <div className="flex items-end justify-between gap-2" style={{ height: 100 }}>
           {thisWeek.map((d) => {
             const h = Math.max(4, Math.round((d.seconds / maxBar) * 84));
@@ -447,11 +452,11 @@ export function AnalyticsContent({ history, dayKey, todaySeconds, tasks }) {
   );
 }
 
-export function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, onBack }) {
+export function AnalyticsPanel({ history, dayKey, todaySeconds, tasks, myLeaderboardRank, onBack }) {
   return (
     <div className="flex flex-col gap-5">
       <PanelHeader title="Weekly Analytics" onBack={onBack} />
-      <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks} />
+      <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks} myLeaderboardRank={myLeaderboardRank} />
     </div>
   );
 }
@@ -461,9 +466,10 @@ function HowToUsePanel({ onBack }) {
     { title: "Start the Study Stopwatch", body: "On the Home tab, hit play on the Study Stopwatch whenever you sit down to study. It keeps running in the background even if you switch tabs, and adds straight to your \"Time today\"." },
     { title: "Reset just resets the face", body: "Tapping reset only zeroes the stopwatch's own display for a fresh session — it never removes time you've already banked for the day." },
     { title: "Add notes", body: "On the Notes tab, tap \"New note\" to jot anything down — no character limit, so a note can be as short or as long as you need." },
-    { title: "Check your Calendar", body: "The Calendar tab shows how many hours you studied on each day, plus a 7-day / 1-month progress chart." },
+    { title: "Check your Calendar", body: "The Calendar tab shows how many hours you studied on each day, plus a progress chart — \"This week\" (Mon–Sun, resets every Monday) and \"This month\" (1st to today, resets on the 1st)." },
     { title: "See your stats in Your data", body: "Settings → Your data shows today's time, total study time, today's tasks, coins, streak, and level, all in one place." },
-    { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, today's task completion rate, and a 7-day bar chart." },
+    { title: "Track progress in Weekly Analytics", body: "Settings → Weekly Analytics shows your weekly total, daily average, best day, how this week compares to last week, and your rank in the leaderboard — all measured Monday through Sunday, resetting fresh every Monday." },
+    { title: "Check the Leaderboard", body: "Settings → Leaderboard (or the trophy icon on Home) ranks everyone by how much they've studied THIS WEEK. It resets every Monday, so everyone starts even — your rank updates live as you study." },
     { title: "Earn XP, coins, and streaks", body: "You earn XP for every 10 seconds you study, level up over time, and build a daily streak by opening the app and studying each day. Coins are paid out on level-up and can be spent in the Store." },
     { title: "Customize your look", body: "Buy mascots in the Store with coins, then pick your favorite as your app icon under Settings → Customize." },
     { title: "Ask AI", body: "Use \"Ask AI\" on Home to chat right inside the app — ask questions or attach a photo of your notes for an instant explanation." },
@@ -701,7 +707,7 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, onOpenLeaderboard, myLeaderboardRank }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -726,7 +732,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
   if (section === "analytics") {
     return (
       <AnalyticsPanel
-        history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks}
+        history={history} dayKey={dayKey} todaySeconds={todaySeconds} tasks={tasks} myLeaderboardRank={myLeaderboardRank}
         onBack={() => setSection(null)}
       />
     );
@@ -745,6 +751,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
       <SectionLabel>Your account</SectionLabel>
       <MenuRow icon={Database} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Your data" onClick={() => setSection("data")} />
       <MenuRow icon={BarChart3} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Weekly Analytics" onClick={() => setSection("analytics")} />
+      <MenuRow icon={Trophy} iconBg="rgba(245,179,1,0.15)" iconColor="#F5B301" label="Leaderboard" onClick={onOpenLeaderboard} />
       <MenuRow icon={CreditCard} iconBg="rgba(63,207,163,0.15)" iconColor={COL.mint} label="Billing" onClick={() => setSection("billing")} />
 
       <SectionLabel>Support</SectionLabel>

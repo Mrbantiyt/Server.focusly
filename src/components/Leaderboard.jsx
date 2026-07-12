@@ -57,9 +57,9 @@ function Row({ rank, row, isMe }) {
 
       <div className="text-right shrink-0">
         <div className="font-display font-bold text-sm" style={{ color: COL.ink }}>
-          {fmtHrs(row.totalStudySeconds || 0)}
+          {fmtHrs(row.weeklyStudySeconds || 0)}
         </div>
-        <div className="font-body text-[10px]" style={{ color: COL.sub }}>studied</div>
+        <div className="font-body text-[10px]" style={{ color: COL.sub }}>this week</div>
       </div>
     </div>
   );
@@ -79,13 +79,14 @@ export default function Leaderboard({ rows, loading, myUid, onClose }) {
           <div className="w-9 h-9" />
         </div>
 
-        <div className="flex justify-center mb-6 shrink-0">
+        <div className="flex flex-col items-center gap-1 mb-6 shrink-0">
           <div style={neu(false, 999)} className="flex items-center gap-2 px-5 py-2.5">
             <Trophy size={18} color={COL.gold} />
             <span className="font-display font-bold text-sm" style={{ color: COL.ink }}>
               {myRank > 0 ? `Your rank: #${myRank}` : "Study to get ranked"}
             </span>
           </div>
+          <span className="font-body text-[10px]" style={{ color: COL.sub }}>Resets every Monday</span>
         </div>
 
         <div className="flex-1 overflow-y-auto -mx-1 px-1">
@@ -97,7 +98,7 @@ export default function Leaderboard({ rows, loading, myUid, onClose }) {
             </div>
           ) : rows.length === 0 ? (
             <div className="text-center py-10 font-body text-sm" style={{ color: COL.sub }}>
-              No one on the leaderboard yet. Start a study session to be the first!
+              No one on the leaderboard this week yet. Start a study session to be the first!
             </div>
           ) : (
             <div className="flex flex-col gap-2">
