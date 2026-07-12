@@ -552,7 +552,7 @@ function BillingPanel({ uid, billing, onBack }) {
             <div>
               <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Current plan</div>
               <div className="font-body text-xs" style={{ color: COL.sub }}>
-                {messageLimit} AI messages / day
+                {messageLimit === null ? "Unlimited" : `${messageLimit} min`} Ask AI / day
               </div>
             </div>
           </div>
@@ -611,7 +611,7 @@ function BillingPanel({ uid, billing, onBack }) {
         {PLAN_LIMIT_ROWS.map(({ plan, limit }) => (
           <div key={plan} className="flex items-center justify-between font-body text-xs" style={{ color: COL.sub }}>
             <span>{PLAN_LABELS[plan]}</span>
-            <span>{limit} messages / day</span>
+            <span>{limit === null ? "Unlimited" : `${limit} min`} / day</span>
           </div>
         ))}
       </div>
