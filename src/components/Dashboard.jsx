@@ -14,7 +14,7 @@ function getGreeting() {
   return "Good night";
 }
 
-export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications }) {
+export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank }) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
 
@@ -73,7 +73,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
       {/* Weekly Analytics — shown directly on the home page */}
       <div className="flex flex-col gap-3">
         <div className="font-display font-bold text-sm px-0.5" style={{ color: COL.ink }}>Weekly Analytics</div>
-        <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={bankedSeconds} tasks={tasks} />
+        <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={bankedSeconds} tasks={tasks} myLeaderboardRank={myLeaderboardRank} />
       </div>
     </div>
   );
