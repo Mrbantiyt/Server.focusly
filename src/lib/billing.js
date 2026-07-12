@@ -17,8 +17,8 @@ export const PLAN = { FREE: "free", TEAM: "team", MAX: "max" };
 // external chat we can't count messages in, so time-open is what we can
 // actually measure and enforce.)
 export const AI_TIME_LIMITS_MIN = {
-  [PLAN.FREE]: 5,
-  [PLAN.TEAM]: 30,
+  [PLAN.FREE]: 30,
+  [PLAN.TEAM]: 60,
   [PLAN.MAX]: null, // unlimited
 };
 
