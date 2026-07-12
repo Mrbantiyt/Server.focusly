@@ -50,6 +50,21 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid;
     }
 
+    // leaderboard/{uid} = { username, totalStudySeconds, streak, level, updatedAt }
+    // Public mirror doc used ONLY for the global leaderboard — deliberately
+    // separate from the private users/{uid} doc so nothing sensitive
+    // (email, billing, etc.) is ever exposed here. Any signed-in user may
+    // read the whole collection (needed to render the ranked list), but a
+    // user may only ever write to their OWN doc (uid == auth.uid), and only
+    // these four fields — never anything else.
+    match /leaderboard/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(["username", "totalStudySeconds", "streak", "level", "updatedAt"]);
+      allow delete: if false;
+    }
+
     // redeemCodes/{CODE} = { plan, days, used, createdAt, redeemedBy, redeemedAt }
     // Every doc here is provisioned AHEAD OF TIME by an admin using the
     // Firebase Admin SDK (see scripts/generate-redeem-codes.js), which
