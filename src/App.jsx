@@ -123,33 +123,23 @@ export default function App() {
     : null;
 
   // Keeps this user's public leaderboard/{uid} mirror doc in sync (username,
-  // lifetime + this-week study time, streak, level) and, while a
-  // leaderboard view is open, live-watches the ranked list — ranked by
-  // THIS WEEK's study time only, so it resets every Monday.
-  // Also enabled while Settings' Weekly Analytics panel is open, so the
-  // "Your rank in leaderboard" stat there has live data too.
+  // lifetime + this-week study time, streak, level) AND live-watches the
+  // ranked list, for as long as the user is signed in — not just while a
+  // specific tab/panel is open. A top-50 listener is cheap enough to keep
+  // running for the whole session, and doing it this way means "Your rank
+  // in leaderboard" is instantly correct everywhere it's shown (Home,
+  // Weekly Analytics, Your Data, the Leaderboard panel itself) with no
+  // flicker or stale "—" while switching tabs.
   const { rows: leaderboardRows, loading: leaderboardLoading } = useLeaderboard(
     user?.uid,
     { username: profile?.username, totalStudySeconds, weeklyStudySeconds, streak: gameStats.streak, level: gameStats.level },
-    showLeaderboard || settingsInitialSection === "analytics" || (tab === "settings"),
+    !!user?.uid,
     { weekly: true }
   );
 
-  // Hold on to the last rank we actually saw. The listener above only runs
-  // while a leaderboard view is open (to avoid an always-on cross-user
-  // listener), so `leaderboardRows` goes empty the instant you navigate
-  // away — e.g. tapping Home while Settings is still finishing its unmount.
-  // Without this, that brief empty state flashes as "—" / "Study to get
-  // ranked" even though the user IS ranked; we just don't have fresh data
-  // for a moment. Only overwrite the remembered rank when we get a
-  // non-empty snapshot back.
-  const [myLeaderboardRank, setMyLeaderboardRank] = useState(null);
-  useEffect(() => {
-    if (!user?.uid) { setMyLeaderboardRank(null); return; }
-    if (leaderboardRows.length === 0) return;
-    const rank = leaderboardRows.findIndex((r) => r.uid === user.uid) + 1;
-    setMyLeaderboardRank(rank || null);
-  }, [leaderboardRows, user?.uid]);
+  const myLeaderboardRank = user?.uid
+    ? (leaderboardRows.findIndex((r) => r.uid === user.uid) + 1) || null
+    : null;
 
   // If running inside the Median-wrapped native app, capture this device's
   // OneSignal push subscription id so the server-side reminder cron job
