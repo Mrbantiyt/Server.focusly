@@ -2,6 +2,7 @@
 import {
   doc, getDoc, setDoc, collection, addDoc, updateDoc, deleteDoc, getDocs, writeBatch,
   onSnapshot, query, where, documentId, serverTimestamp, runTransaction, increment, Timestamp,
+  orderBy, limit,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { dayKeyFor } from "./time";
@@ -19,9 +20,30 @@ export async function getStudyDay(uid, dayKey) {
   return { seconds: snap.exists() ? snap.data().seconds || 0 : 0 };
 }
 
+// Day docs store an ABSOLUTE seconds value for that day (not incremental —
+// see useStopwatch.js), so we can't just `increment()` the lifetime total
+// on every flush; that would double-count every flush after the first for
+// the same day. Instead this reads the day doc's previous value inside a
+// transaction and folds only the DELTA into users/{uid}.totalStudySeconds,
+// which is the running lifetime total the leaderboard ranks on.
 export async function setStudyDay(uid, dayKey, seconds) {
-  const ref = doc(db, "users", uid, "studyDays", dayKey);
-  await setDoc(ref, { seconds, updatedAt: serverTimestamp() }, { merge: true });
+  const dayRef = doc(db, "users", uid, "studyDays", dayKey);
+  const userRef = doc(db, "users", uid);
+
+  await runTransaction(db, async (tx) => {
+    // Firestore transactions require ALL reads before ANY writes, so both
+    // docs are read up front before either is written.
+    const [daySnap, userSnap] = await Promise.all([tx.get(dayRef), tx.get(userRef)]);
+    const prevSeconds = daySnap.exists() ? daySnap.data().seconds || 0 : 0;
+    const delta = seconds - prevSeconds;
+
+    tx.set(dayRef, { seconds, updatedAt: serverTimestamp() }, { merge: true });
+
+    if (delta !== 0) {
+      const prevTotal = userSnap.exists() ? userSnap.data().totalStudySeconds || 0 : 0;
+      tx.set(userRef, { totalStudySeconds: Math.max(0, prevTotal + delta) }, { merge: true });
+    }
+  });
 }
 
 // Live-listen to today's doc so the stopwatch stays in sync across tabs/devices
@@ -184,6 +206,36 @@ export async function runMidnightTaskReset(uid, todayKey) {
     for (const d of docsToWipe.slice(i, i + 450)) batch.delete(d.ref);
     await batch.commit();
   }
+}
+
+/* ------------------------------------ leaderboard -------------------------------- */
+// leaderboard/{uid} = { username, totalStudySeconds, streak, level, updatedAt }
+//
+// This is a small PUBLIC mirror doc, deliberately separate from the private
+// users/{uid} doc (which holds email/billing/etc and stays owner-only-read).
+// Only these four fields ever get written here, so nothing sensitive is
+// ever exposed. It's kept in sync from the client every time study time,
+// streak, or level changes — see useLeaderboard.js.
+export async function syncLeaderboardEntry(uid, { username, totalStudySeconds, streak, level }) {
+  const ref = doc(db, "leaderboard", uid);
+  await setDoc(ref, {
+    username: username || "Anonymous",
+    totalStudySeconds: totalStudySeconds || 0,
+    streak: streak || 0,
+    level: level || 0,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
+// Top N users by lifetime study time, live-updating.
+export function watchLeaderboard(cb, topN = 50) {
+  const ref = collection(db, "leaderboard");
+  const q = query(ref, orderBy("totalStudySeconds", "desc"), limit(topN));
+  return onSnapshot(q, (snap) => {
+    const rows = [];
+    snap.forEach((d) => rows.push({ uid: d.id, ...d.data() }));
+    cb(rows);
+  });
 }
 
 /* -------------------------------- gamification ---------------------------------- */
