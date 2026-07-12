@@ -9,28 +9,28 @@
 import { THEME_LIST } from "../themeDefinitions";
 
 export const COSMIC_VOYAGER_PACK = [
-  { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.webp", price: 5 },
-  { id: "drago-cosmic", name: "Cosmic Drago", img: "/store/drago-cosmic.webp", price: 10 },
-  { id: "drago-supernova", name: "Supernova Drago", img: "/store/drago-supernova.webp", price: 15 },
+  { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.png", price: 5 },
+  { id: "drago-cosmic", name: "Cosmic Drago", img: "/store/drago-cosmic.png", price: 10 },
+  { id: "drago-supernova", name: "Supernova Drago", img: "/store/drago-supernova.png", price: 15 },
 ];
 
 export const MOOD_PACK = [
-  { id: "mr-brightside", name: "Mr.Brightside", img: "/store/mr-brightside.webp", price: 35 },
-  { id: "aha-moment", name: "The Aha Moment", img: "/store/aha-moment.webp", price: 200 },
-  { id: "count-dragula", name: "Count Dragula", img: "/store/count-dragula.webp", price: 200 },
-  { id: "kai-njuring", name: "The Kai-njuring", img: "/store/kai-njuring.webp", price: 125 },
-  { id: "man-of-the-match", name: "Man of the Match", img: "/store/man-of-the-match.webp", price: 100 },
-  { id: "sweating-bullets", name: "Sweating Bullets", img: "/store/sweating-bullets.webp", price: 300 },
-  { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.webp", price: 500 },
+  { id: "mr-brightside", name: "Mr.Brightside", img: "/store/mr-brightside.png", price: 35 },
+  { id: "aha-moment", name: "The Aha Moment", img: "/store/aha-moment.png", price: 200 },
+  { id: "count-dragula", name: "Count Dragula", img: "/store/count-dragula.png", price: 200 },
+  { id: "kai-njuring", name: "The Kai-njuring", img: "/store/kai-njuring.png", price: 125 },
+  { id: "man-of-the-match", name: "Man of the Match", img: "/store/man-of-the-match.png", price: 100 },
+  { id: "sweating-bullets", name: "Sweating Bullets", img: "/store/sweating-bullets.png", price: 300 },
+  { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.png", price: 500 },
 ];
 
 export const BLACK_PACK = [
-  { id: "black-skeleton", name: "Eclipse Reaper", img: "/store/black-skeleton.webp", price: 900 },
-  { id: "black-allseeing", name: "All-Seeing Coil", img: "/store/black-allseeing.webp", price: 500 },
-  { id: "black-sunmoon", name: "Solstice Oracle", img: "/store/black-sunmoon.webp", price: 500 },
-  { id: "black-mystic-eye", name: "Mystic Sigil Eye", img: "/store/black-mystic-eye.webp", price: 500 },
-  { id: "black-eye-star", name: "Starlit Watcher", img: "/store/black-eye-star.webp", price: 500 },
-  { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.webp", price: 500 },
+  { id: "black-skeleton", name: "Eclipse Reaper", img: "/store/black-skeleton.png", price: 900 },
+  { id: "black-allseeing", name: "All-Seeing Coil", img: "/store/black-allseeing.png", price: 500 },
+  { id: "black-sunmoon", name: "Solstice Oracle", img: "/store/black-sunmoon.png", price: 500 },
+  { id: "black-mystic-eye", name: "Mystic Sigil Eye", img: "/store/black-mystic-eye.png", price: 500 },
+  { id: "black-eye-star", name: "Starlit Watcher", img: "/store/black-eye-star.png", price: 500 },
+  { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.png", price: 500 },
 ];
 
 // App-wide visual themes (e.g. "Glass"), purchasable/equippable the same
