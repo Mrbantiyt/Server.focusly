@@ -1,9 +1,10 @@
 // src/components/Store.jsx
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { X, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { purchaseItem, setActiveMascot } from "../lib/firestore";
 import { fmtCompact } from "../lib/time";
+import { loadStoreOverrides, applyStoreOverrides } from "../lib/storeOverrides";
 
 // All purchasable mascots, grouped into packs.
 // `img` files live in /public/store/ (served from site root as /store/...).
@@ -32,10 +33,13 @@ const BLACK_PACK = [
   { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.png", price: 500 },
 ];
 
-// Flat lookup used elsewhere in the app (e.g. resolving the active mascot image).
+// Flat lookup of the hardcoded (built-in) items only — used at first paint
+// (App.jsx resolving the active mascot image) before any admin overrides
+// have loaded. May have stale name/price if an admin edited those, but the
+// id/img are always correct since only name/price can be overridden.
 export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK, ...BLACK_PACK];
 
-const PACKS = [
+const BASE_PACKS = [
   { title: "Cosmic Voyager Theme Pack", items: COSMIC_VOYAGER_PACK, layout: "grid" },
   { title: "Mood Pack", items: MOOD_PACK, layout: "list" },
   { title: "Black", items: BLACK_PACK, layout: "grid" },
@@ -54,6 +58,21 @@ function CoinPill({ value }) {
 export default function Store({ uid, coins, ownedItems, activeMascot, onClose }) {
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
+  const [packs, setPacks] = useState(BASE_PACKS);
+  const [allItems, setAllItems] = useState(STORE_ITEMS);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadStoreOverrides().then((result) => {
+      if (cancelled) return;
+      const merged = applyStoreOverrides(BASE_PACKS, result);
+      setPacks(merged);
+      setAllItems(merged.flatMap((p) => p.items));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const owned = ownedItems || [];
 
@@ -73,7 +92,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
     await setActiveMascot(uid, itemId);
   }
 
-  const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
+  const collection = allItems.filter((it) => owned.includes(it.id));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
@@ -96,7 +115,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
           </div>
         )}
 
-        {PACKS.map((pack) => (
+        {packs.map((pack) => (
           <div key={pack.title} className="mb-6">
             <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
               {pack.title}
