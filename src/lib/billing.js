@@ -12,12 +12,20 @@
 
 export const PLAN = { FREE: "free", TEAM: "team", MAX: "max" };
 
-// Daily "Ask AI" message allowance per plan.
-export const AI_MESSAGE_LIMITS = {
+// Daily "Ask AI" TIME allowance per plan, in minutes. `null` = unlimited.
+// (Previously this was a message-count limit; the AI screen now embeds an
+// external chat we can't count messages in, so time-open is what we can
+// actually measure and enforce.)
+export const AI_TIME_LIMITS_MIN = {
   [PLAN.FREE]: 5,
-  [PLAN.TEAM]: 25,
-  [PLAN.MAX]: 50,
+  [PLAN.TEAM]: 30,
+  [PLAN.MAX]: null, // unlimited
 };
+
+export function getAiTimeLimitSeconds(billing) {
+  const mins = AI_TIME_LIMITS_MIN[getEffectivePlan(billing)];
+  return mins === null ? null : mins * 60;
+}
 
 export const PLAN_LABELS = {
   [PLAN.FREE]: "Free",

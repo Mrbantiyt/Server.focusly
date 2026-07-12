@@ -623,3 +623,21 @@ export async function incrementAiUsage(uid, dayKey) {
   });
 }
 
+// Adds `deltaSeconds` to today's Ask-AI TIME usage (how long the AI screen
+// has been open), rolling over to a fresh total if `dayKey` has moved on —
+// same lazy-reset pattern as incrementAiUsage/redeemCode above, so there's
+// no separate midnight job. Called periodically (e.g. every ~10s) while the
+// AI screen is open, rather than once at the end, so a closed tab/killed
+// app doesn't lose the time already spent.
+export async function addAiUsageSeconds(uid, dayKey, deltaSeconds) {
+  const ref = doc(db, "users", uid);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const usage = snap.exists() ? snap.data().aiUsage : null;
+    const prevSeconds = usage && usage.dayKey === dayKey ? usage.seconds || 0 : 0;
+    const count = usage && usage.dayKey === dayKey ? usage.count || 0 : 0;
+    tx.set(ref, { aiUsage: { dayKey, count, seconds: prevSeconds + deltaSeconds } }, { merge: true });
+  });
+}
+
+
