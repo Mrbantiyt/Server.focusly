@@ -135,9 +135,21 @@ export default function App() {
     { weekly: true }
   );
 
-  const myLeaderboardRank = user?.uid
-    ? (leaderboardRows.findIndex((r) => r.uid === user.uid) + 1) || null
-    : null;
+  // Hold on to the last rank we actually saw. The listener above only runs
+  // while a leaderboard view is open (to avoid an always-on cross-user
+  // listener), so `leaderboardRows` goes empty the instant you navigate
+  // away — e.g. tapping Home while Settings is still finishing its unmount.
+  // Without this, that brief empty state flashes as "—" / "Study to get
+  // ranked" even though the user IS ranked; we just don't have fresh data
+  // for a moment. Only overwrite the remembered rank when we get a
+  // non-empty snapshot back.
+  const [myLeaderboardRank, setMyLeaderboardRank] = useState(null);
+  useEffect(() => {
+    if (!user?.uid) { setMyLeaderboardRank(null); return; }
+    if (leaderboardRows.length === 0) return;
+    const rank = leaderboardRows.findIndex((r) => r.uid === user.uid) + 1;
+    setMyLeaderboardRank(rank || null);
+  }, [leaderboardRows, user?.uid]);
 
   // If running inside the Median-wrapped native app, capture this device's
   // OneSignal push subscription id so the server-side reminder cron job
@@ -228,8 +240,9 @@ export default function App() {
                   initialSection={settingsInitialSection}
                   totalStudySeconds={totalStudySeconds}
                   onLogout={logout}
-                  onOpenLeaderboard={() => setShowLeaderboard(true)}
                   myLeaderboardRank={myLeaderboardRank}
+                  leaderboardRows={leaderboardRows}
+                  leaderboardLoading={leaderboardLoading}
                 />
               )}
             </div>
