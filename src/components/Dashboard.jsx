@@ -57,7 +57,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
       <StopwatchCard seconds={displaySeconds} running={running} onToggle={onToggle} onReset={onReset} />
 
       <button
-        onClick={() => window.open("https://notegpt.io/ai-chat", "_blank", "noopener,noreferrer")}
+        onClick={goChat}
         style={neu(false, 20)}
         className="p-4 flex items-center gap-3 active:scale-[0.98] transition text-left"
       >
@@ -66,7 +66,7 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
         </div>
         <div>
           <div className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Ask AI</div>
-          <div className="font-body text-xs" style={{ color: COL.sub }}>Opens in a new tab</div>
+          <div className="font-body text-xs" style={{ color: COL.sub }}>Chat with NoteGPT</div>
         </div>
       </button>
 
