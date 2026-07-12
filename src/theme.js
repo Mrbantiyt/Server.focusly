@@ -30,8 +30,17 @@ export let glassBlobs = THEME_DEFINITIONS[DEFAULT_THEME_ID].blobs || [];
 const LOCAL_KEY = "focusly:appTheme";
 const listeners = new Set();
 
+let currentThemeId = DEFAULT_THEME_ID;
+
 function applyTheme(themeId) {
   const def = THEME_DEFINITIONS[themeId] || THEME_DEFINITIONS[DEFAULT_THEME_ID];
+
+  // No-op if this theme is already active — prevents listeners from firing
+  // (and therefore ThemeProvider remounting the whole app) on every
+  // redundant call, e.g. a Firestore onSnapshot firing again with the same
+  // activeTheme value (reconnects, metadata-only changes, etc.).
+  if (currentThemeId === def.id) return;
+  currentThemeId = def.id;
 
   Object.keys(COL).forEach((k) => delete COL[k]);
   Object.assign(COL, def.COL);
