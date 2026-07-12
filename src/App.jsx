@@ -1,8 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
-import { COL, neu, GLASS_BG_STYLE, ThemeProvider, useAppTheme, setAppTheme } from "./theme";
-import { THEME_DEFINITIONS } from "./themeDefinitions";
+import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useStopwatch } from "./hooks/useStopwatch";
 import { useStudyHistory } from "./hooks/useStudyHistory";
@@ -49,7 +48,7 @@ const NAV = [
 // used below.
 const EMPTY_TASKS = [];
 
-function AppInner() {
+export default function App() {
   const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
@@ -63,13 +62,6 @@ function AppInner() {
   const tasks = EMPTY_TASKS;
   const { notes } = useNotes(user?.uid);
   const gameStats = useGameStats(user?.uid, running);
-
-  // Firestore is the source of truth for the equipped theme; whenever it
-  // changes (bought a new theme, switched in Settings, or synced from
-  // another device) apply it at runtime.
-  useEffect(() => {
-    if (gameStats.activeTheme) setAppTheme(gameStats.activeTheme);
-  }, [gameStats.activeTheme]);
   const { notifications, unreadCount } = useNotifications(user?.uid);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
@@ -163,10 +155,10 @@ function AppInner() {
   }, [user?.uid]);
 
   return (
-    <div className="w-full flex items-center justify-center" style={{ background: COL.bg, minHeight: "100dvh", position: "relative" }}>
+    <div className="w-full flex items-center justify-center" style={{ background: COL.bg, minHeight: "100dvh" }}>
       {FONT}
       <div className="w-full flex flex-col"
-        style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", background: "transparent", position: "relative", zIndex: 1 }}>
+        style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", background: COL.bg }}>
 
         {loading ? (
           <AppLoadingSkeleton />
@@ -232,8 +224,6 @@ function AppInner() {
                   dayKey={dayKey}
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
-                  ownedThemes={gameStats.ownedThemes}
-                  activeTheme={gameStats.activeTheme}
                   billing={profileDoc?.billing}
                   studyReminder={profileDoc?.studyReminder}
                   isMedianApp={isMedianApp()}
@@ -294,8 +284,6 @@ function AppInner() {
           coins={gameStats.coins}
           ownedItems={gameStats.ownedItems}
           activeMascot={gameStats.activeMascot}
-          ownedThemes={gameStats.ownedThemes}
-          activeTheme={gameStats.activeTheme}
           onClose={() => setShowStore(false)}
         />
       )}
@@ -315,35 +303,5 @@ function AppInner() {
         />
       )}
     </div>
-  );
-}
-
-// Renders the current theme's decorative background blobs (if any).
-// Lives inside ThemeProvider's remounted subtree so it always reflects
-// the currently-equipped theme.
-function ThemeBackdrop() {
-  const [themeId] = useAppTheme();
-  const blobs = THEME_DEFINITIONS[themeId]?.blobs || [];
-  if (!blobs.length) return null;
-  return (
-    <div style={GLASS_BG_STYLE}>
-      {blobs.map((b, i) => (
-        <div key={i} style={{
-          position: "absolute",
-          width: b.size, height: b.size, borderRadius: "50%",
-          background: b.background, opacity: b.opacity, filter: "blur(90px)",
-          top: b.top, left: b.left, right: b.right, bottom: b.bottom,
-        }} />
-      ))}
-    </div>
-  );
-}
-
-export default function App() {
-  return (
-    <ThemeProvider>
-      <ThemeBackdrop />
-      <AppInner />
-    </ThemeProvider>
   );
 }
