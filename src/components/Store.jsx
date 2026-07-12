@@ -1,11 +1,45 @@
 // src/components/Store.jsx
 import React, { useState } from "react";
-import { X, Check, Sparkles } from "lucide-react";
+import { X, Check } from "lucide-react";
 import { COL, neu } from "../theme";
-import { purchaseItem, setActiveMascot, setActiveTheme } from "../lib/firestore";
+import { purchaseItem, setActiveMascot } from "../lib/firestore";
 import { fmtCompact } from "../lib/time";
-import { PACKS, STORE_ITEMS } from "../lib/storeItems";
-export { STORE_ITEMS };
+
+// All purchasable mascots, grouped into packs.
+// `img` files live in /public/store/ (served from site root as /store/...).
+const COSMIC_VOYAGER_PACK = [
+  { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.png", price: 5 },
+  { id: "drago-cosmic", name: "Cosmic Drago", img: "/store/drago-cosmic.png", price: 10 },
+  { id: "drago-supernova", name: "Supernova Drago", img: "/store/drago-supernova.png", price: 15 },
+];
+
+const MOOD_PACK = [
+  { id: "mr-brightside", name: "Mr.Brightside", img: "/store/mr-brightside.png", price: 35 },
+  { id: "aha-moment", name: "The Aha Moment", img: "/store/aha-moment.png", price: 200 },
+  { id: "count-dragula", name: "Count Dragula", img: "/store/count-dragula.png", price: 200 },
+  { id: "kai-njuring", name: "The Kai-njuring", img: "/store/kai-njuring.png", price: 125 },
+  { id: "man-of-the-match", name: "Man of the Match", img: "/store/man-of-the-match.png", price: 100 },
+  { id: "sweating-bullets", name: "Sweating Bullets", img: "/store/sweating-bullets.png", price: 300 },
+  { id: "family-disappointment", name: "Family Disappointment", img: "/store/family-disappointment.png", price: 500 },
+];
+
+const BLACK_PACK = [
+  { id: "black-skeleton", name: "Eclipse Reaper", img: "/store/black-skeleton.png", price: 900 },
+  { id: "black-allseeing", name: "All-Seeing Coil", img: "/store/black-allseeing.png", price: 500 },
+  { id: "black-sunmoon", name: "Solstice Oracle", img: "/store/black-sunmoon.png", price: 500 },
+  { id: "black-mystic-eye", name: "Mystic Sigil Eye", img: "/store/black-mystic-eye.png", price: 500 },
+  { id: "black-eye-star", name: "Starlit Watcher", img: "/store/black-eye-star.png", price: 500 },
+  { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.png", price: 500 },
+];
+
+// Flat lookup used elsewhere in the app (e.g. resolving the active mascot image).
+export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK, ...BLACK_PACK];
+
+const PACKS = [
+  { title: "Cosmic Voyager Theme Pack", items: COSMIC_VOYAGER_PACK, layout: "grid" },
+  { title: "Mood Pack", items: MOOD_PACK, layout: "list" },
+  { title: "Black", items: BLACK_PACK, layout: "grid" },
+];
 
 function CoinPill({ value }) {
   return (
@@ -17,12 +51,11 @@ function CoinPill({ value }) {
   );
 }
 
-export default function Store({ uid, coins, ownedItems, activeMascot, ownedThemes, activeTheme, onClose }) {
+export default function Store({ uid, coins, ownedItems, activeMascot, onClose }) {
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
 
   const owned = ownedItems || [];
-  const ownedThemesList = ownedThemes || [];
 
   async function handleBuy(item) {
     if (!uid || busyId) return;
@@ -38,11 +71,6 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
   async function handleEquip(itemId) {
     if (!uid) return;
     await setActiveMascot(uid, itemId);
-  }
-
-  async function handleEquipTheme(themeId) {
-    if (!uid) return;
-    await setActiveTheme(uid, themeId);
   }
 
   const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
@@ -74,62 +102,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
               {pack.title}
             </div>
 
-            {pack.layout === "theme" ? (
-              <div className="grid grid-cols-2 gap-3">
-                {pack.items.map((item) => {
-                  const isOwned = ownedThemesList.includes(item.id);
-                  const isBusy = busyId === item.id;
-                  const isEquipped = activeTheme === item.themeId;
-                  return (
-                    <div key={item.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
-                      <div
-                        className="w-full h-16 rounded-2xl mb-2 flex items-center justify-center relative overflow-hidden"
-                        style={{
-                          background: item.preview?.bg || COL.card,
-                          border: `1px solid ${item.preview?.glass ? "rgba(255,255,255,0.14)" : COL.border}`,
-                        }}
-                      >
-                        {item.preview?.glass && (
-                          <div style={{
-                            position: "absolute", width: 60, height: 60, borderRadius: "50%",
-                            background: item.preview?.accent, opacity: 0.5, filter: "blur(20px)",
-                          }} />
-                        )}
-                        <Sparkles size={18} color={item.preview?.accent || COL.violet} style={{ position: "relative" }} />
-                      </div>
-                      <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{item.name}</div>
-                      {isEquipped ? (
-                        <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
-                          style={{ background: "rgba(123,110,246,0.18)", color: COL.violet }}>
-                          <Check size={12} /> Applied
-                        </div>
-                      ) : isOwned ? (
-                        <button
-                          onClick={() => handleEquipTheme(item.themeId)}
-                          style={neu(false, 999)}
-                          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition"
-                        >
-                          <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>Apply</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleBuy(item)}
-                          disabled={isBusy}
-                          style={neu(false, 999)}
-                          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
-                        >
-                          <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
-                            style={{ background: "#F5B301", color: "#fff" }}>F</span>
-                          <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
-                            {isBusy ? "…" : item.price}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : pack.layout === "grid" ? (
+            {pack.layout === "grid" ? (
               <div className="grid grid-cols-2 gap-3">
                 {pack.items.map((item) => {
                   const isOwned = owned.includes(item.id);

@@ -11,9 +11,8 @@ import {
   Trophy,
 } from "lucide-react";
 import { COL, neu } from "../theme";
-import { THEME_LIST } from "../themeDefinitions";
 import { fmtHrs, fmtCompact, getWeekStartKey } from "../lib/time";
-import { updateUserProfile, claimUsername, setActiveMascot, setActiveTheme, redeemCode } from "../lib/firestore";
+import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from "../lib/firestore";
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
@@ -116,7 +115,7 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
           )}
           <button onClick={() => setPickerOpen(true)} disabled={savingDp}
             className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center border-2"
-            style={{ background: COL.violet, borderColor: "#1C1C26" }}>
+            style={{ background: COL.violet, borderColor: COL.card }}>
             {savingDp ? <Loader2 size={12} color="#fff" className="animate-spin" /> : <Camera size={12} color="#fff" />}
           </button>
         </div>
@@ -202,64 +201,20 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
 
 /* --------------------------------- Customize --------------------------------- */
 
-function CustomizePanel({ uid, ownedItems, activeMascot, ownedThemes, activeTheme, onBack }) {
+function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
   const owned = ownedItems || [];
-  const ownedThemesList = ownedThemes || [];
   const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
-  const ownedThemeDefs = THEME_LIST.filter((t) => t.default || ownedThemesList.includes(`theme:${t.id}`));
 
   const handleEquip = async (itemId) => {
     if (!uid) return;
     await setActiveMascot(uid, itemId);
   };
 
-  const handleEquipTheme = async (themeId) => {
-    if (!uid) return;
-    await setActiveTheme(uid, themeId);
-  };
-
   return (
     <div className="flex flex-col gap-5">
       <PanelHeader title="Customize" onBack={onBack} />
 
-      <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>App theme</div>
-      <div className="font-body text-xs -mt-3" style={{ color: COL.sub }}>
-        Switch between visual styles you've unlocked. Buy more in the Store.
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        {ownedThemeDefs.map((t) => {
-          const active = activeTheme === t.id || (!activeTheme && t.default);
-          return (
-            <button
-              key={t.id}
-              onClick={() => handleEquipTheme(t.id)}
-              className="flex flex-col items-center gap-1.5 active:scale-95 transition"
-            >
-              <div
-                className="w-full h-14 rounded-2xl flex items-center justify-center relative overflow-hidden"
-                style={{
-                  background: t.preview?.bg || COL.card,
-                  border: active ? `2px solid ${COL.violet}` : `1px solid ${t.preview?.glass ? "rgba(255,255,255,0.14)" : COL.border}`,
-                }}
-              >
-                {t.preview?.glass && (
-                  <div style={{
-                    position: "absolute", width: 50, height: 50, borderRadius: "50%",
-                    background: t.preview?.accent, opacity: 0.5, filter: "blur(18px)",
-                  }} />
-                )}
-                <Sparkles size={16} color={t.preview?.accent || COL.violet} style={{ position: "relative" }} />
-              </div>
-              <span className="font-body text-[10px]" style={{ color: active ? COL.violet : COL.sub }}>
-                {t.name}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="font-display font-semibold text-base mt-2" style={{ color: COL.ink }}>App icon</div>
+      <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>App icon</div>
       <div className="font-body text-xs -mt-3" style={{ color: COL.sub }}>
         Pick which mascot shows as your app icon, from the ones you've bought in the Store.
       </div>
@@ -758,12 +713,12 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, ownedThemes, activeTheme, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
   if (section === "billing") return <BillingPanel uid={user.uid} billing={billing} onBack={() => setSection(null)} />;
-  if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} ownedThemes={ownedThemes} activeTheme={activeTheme} onBack={() => setSection(null)} />;
+  if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} onBack={() => setSection(null)} />;
   if (section === "notifications") {
     return (
       <NotificationsPanel

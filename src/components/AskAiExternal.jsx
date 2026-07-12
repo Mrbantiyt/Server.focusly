@@ -277,7 +277,7 @@ export default function AskAiExternal({ user, billing, aiUsage, dayKey, onUpgrad
               </div>
             )}
             {iframeStatus === "blocked" && (
-              <div className="absolute inset-0 z-10" style={{ background: "#1C1C26" }}>
+              <div className="absolute inset-0 z-10" style={{ background: COL.card }}>
                 <AskAiBlockedCard onRetry={handleRetry} />
               </div>
             )}
