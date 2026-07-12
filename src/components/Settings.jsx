@@ -685,8 +685,8 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, onLogout }) {
-  const [section, setSection] = useState(null); // null = main menu
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout }) {
+  const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
   if (section === "billing") return <BillingPanel uid={user.uid} billing={billing} onBack={() => setSection(null)} />;
