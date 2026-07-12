@@ -209,28 +209,47 @@ export async function runMidnightTaskReset(uid, todayKey) {
 }
 
 /* ------------------------------------ leaderboard -------------------------------- */
-// leaderboard/{uid} = { username, totalStudySeconds, streak, level, updatedAt }
+// leaderboard/{uid} = {
+//   username, totalStudySeconds, streak, level, updatedAt,
+//   weeklyStudySeconds, weekStartKey
+// }
 //
 // This is a small PUBLIC mirror doc, deliberately separate from the private
 // users/{uid} doc (which holds email/billing/etc and stays owner-only-read).
-// Only these four fields ever get written here, so nothing sensitive is
+// Only these fields ever get written here, so nothing sensitive is
 // ever exposed. It's kept in sync from the client every time study time,
 // streak, or level changes — see useLeaderboard.js.
-export async function syncLeaderboardEntry(uid, { username, totalStudySeconds, streak, level }) {
+//
+// weeklyStudySeconds/weekStartKey power the "resets every Monday" leaderboard:
+// weekStartKey is the Mon-Sun week (see getWeekStartKey in lib/time) that
+// weeklyStudySeconds was accumulated for. watchLeaderboard filters to rows
+// whose weekStartKey matches the CURRENT week, so anyone who hasn't studied
+// yet this week simply drops out of the ranking the moment Monday starts —
+// no batch job or cron needed, it happens naturally on their next sync.
+export async function syncLeaderboardEntry(uid, { username, totalStudySeconds, streak, level, weeklyStudySeconds, weekStartKey }) {
   const ref = doc(db, "leaderboard", uid);
   await setDoc(ref, {
     username: username || "Anonymous",
     totalStudySeconds: totalStudySeconds || 0,
     streak: streak || 0,
     level: level || 0,
+    weeklyStudySeconds: weeklyStudySeconds || 0,
+    weekStartKey: weekStartKey || "",
     updatedAt: serverTimestamp(),
   }, { merge: true });
 }
 
-// Top N users by lifetime study time, live-updating.
-export function watchLeaderboard(cb, topN = 50) {
+// Top N users, live-updating.
+// - lifetime mode (default): ranked by all-time totalStudySeconds.
+// - weekly mode: ranked by weeklyStudySeconds, restricted to rows tagged
+//   with the CURRENT Mon-Sun week's weekStartKey — anyone still tagged with
+//   an older week (hasn't opened the app / studied since Monday) is
+//   excluded rather than shown with a stale number.
+export function watchLeaderboard(cb, topN = 50, { weekly = false, weekStartKey = "" } = {}) {
   const ref = collection(db, "leaderboard");
-  const q = query(ref, orderBy("totalStudySeconds", "desc"), limit(topN));
+  const q = weekly
+    ? query(ref, where("weekStartKey", "==", weekStartKey), orderBy("weeklyStudySeconds", "desc"), limit(topN))
+    : query(ref, orderBy("totalStudySeconds", "desc"), limit(topN));
   return onSnapshot(q, (snap) => {
     const rows = [];
     snap.forEach((d) => rows.push({ uid: d.id, ...d.data() }));

@@ -47,7 +47,47 @@ export function fmtCompact(n) {
   return `${num}`;
 }
 
-// milliseconds until the next midnight boundary from "now"
+// The Monday (local time, 00:00) that starts the calendar week containing
+// `date`. Sunday counts as the last day of that week (not the first) — so
+// weeks run Mon -> Sun, matching how the app's "week" resets.
+export function getWeekStartKey(date = new Date()) {
+  const d = new Date(date);
+  const dow = d.getDay(); // 0 = Sun, 1 = Mon, ... 6 = Sat
+  const diffToMonday = dow === 0 ? 6 : dow - 1; // days since this week's Monday
+  d.setDate(d.getDate() - diffToMonday);
+  return dayKeyFor(d);
+}
+
+// The 1st of the calendar month containing `date`.
+export function getMonthStartKey(date = new Date()) {
+  const d = new Date(date);
+  d.setDate(1);
+  return dayKeyFor(d);
+}
+
+// True if `dayKey` (YYYY-MM-DD) falls within the Mon-Sun week that contains
+// `date` (defaults to today).
+export function isInCurrentWeek(dayKey, date = new Date()) {
+  return dayKey >= getWeekStartKey(date) && dayKey <= dayKeyFor(date);
+}
+
+// True if `dayKey` falls within the same calendar month as `date`.
+export function isInCurrentMonth(dayKey, date = new Date()) {
+  return dayKey >= getMonthStartKey(date) && dayKey <= dayKeyFor(date);
+}
+
+// milliseconds until the next Monday 00:00 (local time) — used to know when
+// weekly resets (leaderboard, weekly analytics, week graph) should roll over.
+export function msUntilNextWeekReset(now = new Date()) {
+  const d = new Date(now);
+  const dow = d.getDay();
+  const daysUntilMonday = dow === 0 ? 1 : 8 - dow; // days from `now` to next Monday
+  d.setDate(d.getDate() + daysUntilMonday);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - now.getTime();
+}
+
+
 export function msUntilNextReset(now = new Date()) {
   const next = new Date(now);
   next.setHours(24, 0, 0, 0); // rolls over to next day's 00:00:00
