@@ -64,6 +64,16 @@ export default function App() {
   const [showStreak, setShowStreak] = useState(false);
   const [showStore, setShowStore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  // When set, Settings mounts straight into that section (e.g. "billing")
+  // instead of its main menu — used by the "Upgrade plan" button on the
+  // Ask AI time-limit card. Cleared once consumed so navigating to
+  // Settings normally afterwards still opens on the main menu.
+  const [settingsInitialSection, setSettingsInitialSection] = useState(null);
+
+  const goToBilling = () => {
+    setSettingsInitialSection("billing");
+    setTab("settings");
+  };
 
   const activeMascotItem = STORE_ITEMS.find((it) => it.id === gameStats.activeMascot);
   const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
@@ -151,7 +161,7 @@ export default function App() {
                 reload the iframe every time.
               */}
               <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
-                <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} />
+                <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} onUpgradePlan={goToBilling} />
               </div>
 
               {tab === "notes" && <Notes uid={user.uid} notes={notes} />}
@@ -177,6 +187,7 @@ export default function App() {
                   billing={profileDoc?.billing}
                   studyReminder={profileDoc?.studyReminder}
                   isMedianApp={isMedianApp()}
+                  initialSection={settingsInitialSection}
                   totalStudySeconds={
                     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds
                   }
@@ -190,7 +201,14 @@ export default function App() {
                 {NAV.map((n) => {
                   const Icon = n.icon, active = tab === n.id;
                   return (
-                    <button key={n.id} onClick={() => setTab(n.id)} className="flex flex-col items-center gap-1">
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        setTab(n.id);
+                        setSettingsInitialSection(null);
+                      }}
+                      className="flex flex-col items-center gap-1"
+                    >
                       <Icon size={18} color={active ? COL.violet : COL.sub} />
                       <div className="w-1 h-1 rounded-full" style={{ background: active ? COL.violet : "transparent" }} />
                     </button>
