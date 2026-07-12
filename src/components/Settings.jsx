@@ -16,6 +16,7 @@ import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from ".
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
+import { LeaderboardPanel } from "./Leaderboard";
 
 /* ------------------------------- shared bits ------------------------------- */
 
@@ -339,13 +340,14 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, hist
   const daysRemaining = getDaysRemaining(billing);
   const planNote = effectivePlan === PLAN.FREE ? "No active subscription" : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`;
 
-  // Same "this week" window Weekly Analytics uses, so these numbers always
-  // match what's shown there.
-  const thisWeek = buildDailySeconds(history || {}, dayKey, todaySeconds || 0, 7);
+  // Same "this week" window Weekly Analytics uses (Mon -> today, resets
+  // every Monday), so these numbers always match what's shown there.
+  const thisWeek = buildWeekDays(history || {}, dayKey, todaySeconds || 0, getWeekStartKey());
+  const daysSoFar = thisWeek.filter((d) => d.key <= dayKey).length || 1;
   const weeklyTotal = thisWeek.reduce((s, d) => s + d.seconds, 0);
-  const dailyAverage = weeklyTotal / 7;
+  const dailyAverage = weeklyTotal / daysSoFar;
   const bestDay = thisWeek.reduce((best, d) => (d.seconds > (best?.seconds ?? -1) ? d : best), null);
-  const bestDayLabel = bestDay ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
+  const bestDayLabel = bestDay && bestDay.seconds > 0 ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
 
   return (
     <div className="flex flex-col gap-5">
@@ -707,7 +709,7 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, onOpenLeaderboard, myLeaderboardRank }) {
+export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -737,6 +739,14 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
       />
     );
   }
+  if (section === "leaderboard") {
+    return (
+      <LeaderboardPanel
+        rows={leaderboardRows || []} loading={!!leaderboardLoading} myUid={user.uid}
+        onBack={() => setSection(null)}
+      />
+    );
+  }
   if (section === "howto") return <HowToUsePanel onBack={() => setSection(null)} />;
   if (section === "password") return <ChangePasswordPanel user={user} onBack={() => setSection(null)} />;
 
@@ -751,7 +761,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
       <SectionLabel>Your account</SectionLabel>
       <MenuRow icon={Database} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Your data" onClick={() => setSection("data")} />
       <MenuRow icon={BarChart3} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Weekly Analytics" onClick={() => setSection("analytics")} />
-      <MenuRow icon={Trophy} iconBg="rgba(245,179,1,0.15)" iconColor="#F5B301" label="Leaderboard" onClick={onOpenLeaderboard} />
+      <MenuRow icon={Trophy} iconBg="rgba(245,179,1,0.15)" iconColor="#F5B301" label="Leaderboard" onClick={() => setSection("leaderboard")} />
       <MenuRow icon={CreditCard} iconBg="rgba(63,207,163,0.15)" iconColor={COL.mint} label="Billing" onClick={() => setSection("billing")} />
 
       <SectionLabel>Support</SectionLabel>

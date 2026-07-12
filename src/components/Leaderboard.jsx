@@ -1,6 +1,6 @@
 // src/components/Leaderboard.jsx
 import React from "react";
-import { X, Trophy, Flame, Shield } from "lucide-react";
+import { X, ChevronLeft, Trophy, Flame, Shield } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
 
@@ -65,9 +65,65 @@ function Row({ rank, row, isMe }) {
   );
 }
 
-export default function Leaderboard({ rows, loading, myUid, onClose }) {
+// The actual leaderboard content, shared by both the full-page panel (used
+// inside Settings) and the modal (used from the Home trophy icon).
+function LeaderboardBody({ rows, loading, myUid }) {
   const myRank = rows.findIndex((r) => r.uid === myUid) + 1;
 
+  return (
+    <>
+      <div className="flex flex-col items-center gap-1 mb-6 shrink-0">
+        <div style={neu(false, 999)} className="flex items-center gap-2 px-5 py-2.5">
+          <Trophy size={18} color={COL.gold} />
+          <span className="font-display font-bold text-sm" style={{ color: COL.ink }}>
+            {myRank > 0 ? `Your rank: #${myRank}` : "Study to get ranked"}
+          </span>
+        </div>
+        <span className="font-body text-[10px]" style={{ color: COL.sub }}>Resets every Monday</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto -mx-1 px-1">
+        {loading ? (
+          <div className="flex flex-col gap-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={neu(false, 18)} className="h-16 animate-pulse" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="text-center py-10 font-body text-sm" style={{ color: COL.sub }}>
+            No one on the leaderboard this week yet. Start a study session to be the first!
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {rows.map((row, i) => (
+              <Row key={row.uid} rank={i + 1} row={row} isMe={row.uid === myUid} />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Full-page panel — used inside Settings, matching "Your data" / "Weekly
+// Analytics" style (back arrow, same header, no overlay/backdrop).
+export function LeaderboardPanel({ rows, loading, myUid, onBack }) {
+  return (
+    <div className="flex flex-col gap-5" style={{ height: "100%" }}>
+      <div className="flex items-center gap-3 shrink-0">
+        <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full flex-shrink-0" style={neu(false, 999)}>
+          <ChevronLeft size={17} color={COL.ink} />
+        </button>
+        <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>Leaderboard</div>
+      </div>
+      <LeaderboardBody rows={rows} loading={loading} myUid={myUid} />
+    </div>
+  );
+}
+
+// Modal version — kept for the trophy icon on Home, which isn't inside the
+// Settings panel stack and needs its own overlay + close button.
+export default function Leaderboard({ rows, loading, myUid, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
       <div className="w-full max-w-sm rounded-[28px] p-6 max-h-[90vh] flex flex-col" style={{ background: COL.bg }}>
@@ -78,36 +134,7 @@ export default function Leaderboard({ rows, loading, myUid, onClose }) {
           <span className="font-display font-bold text-lg" style={{ color: COL.ink }}>Leaderboard</span>
           <div className="w-9 h-9" />
         </div>
-
-        <div className="flex flex-col items-center gap-1 mb-6 shrink-0">
-          <div style={neu(false, 999)} className="flex items-center gap-2 px-5 py-2.5">
-            <Trophy size={18} color={COL.gold} />
-            <span className="font-display font-bold text-sm" style={{ color: COL.ink }}>
-              {myRank > 0 ? `Your rank: #${myRank}` : "Study to get ranked"}
-            </span>
-          </div>
-          <span className="font-body text-[10px]" style={{ color: COL.sub }}>Resets every Monday</span>
-        </div>
-
-        <div className="flex-1 overflow-y-auto -mx-1 px-1">
-          {loading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={neu(false, 18)} className="h-16 animate-pulse" />
-              ))}
-            </div>
-          ) : rows.length === 0 ? (
-            <div className="text-center py-10 font-body text-sm" style={{ color: COL.sub }}>
-              No one on the leaderboard this week yet. Start a study session to be the first!
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {rows.map((row, i) => (
-                <Row key={row.uid} rank={i + 1} row={row} isMe={row.uid === myUid} />
-              ))}
-            </div>
-          )}
-        </div>
+        <LeaderboardBody rows={rows} loading={loading} myUid={myUid} />
       </div>
     </div>
   );
