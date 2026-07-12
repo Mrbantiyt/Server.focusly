@@ -48,8 +48,11 @@ export function getEffectivePlan(billing) {
   return billing.plan;
 }
 
+// Kept for backward compatibility with any screen still importing this
+// (e.g. Settings.jsx) — now returns the time limit in MINUTES instead of a
+// message count, since usage is tracked by time, not message count.
 export function getAiMessageLimit(billing) {
-  return AI_MESSAGE_LIMITS[getEffectivePlan(billing)];
+  return AI_TIME_LIMITS_MIN[getEffectivePlan(billing)];
 }
 
 // Days remaining on the current plan (0 if free / expired).
