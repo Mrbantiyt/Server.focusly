@@ -299,6 +299,8 @@ export function watchGameStats(uid, cb) {
       streakDays: d.streakDays || {},
       ownedItems: d.ownedItems || [],
       activeMascot: d.activeMascot || "default",
+      ownedThemes: d.ownedThemes || [],
+      activeTheme: d.activeTheme || "neumorphic",
       // Lifetime task counters. These survive the daily midnight task wipe
       // (see runMidnightTaskReset below) — the live `tasks` collection only
       // ever holds *today's* tasks, so "Total tasks" in Settings has to
@@ -380,12 +382,30 @@ export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
 // the same item.
 export async function purchaseItem(uid, itemId, cost) {
   const ref = doc(db, "users", uid);
+  const isTheme = itemId.startsWith("theme:");
 
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     const d = snap.exists() ? snap.data() : {};
-    const owned = d.ownedItems || [];
 
+    if (isTheme) {
+      const ownedThemes = d.ownedThemes || [];
+      if (ownedThemes.includes(itemId)) return { ok: false, reason: "already-owned" };
+
+      const coins = d.coins || 0;
+      if (coins < cost) return { ok: false, reason: "not-enough-coins" };
+
+      const themeId = itemId.slice("theme:".length);
+      tx.set(ref, {
+        coins: coins - cost,
+        ownedThemes: [...ownedThemes, itemId],
+        activeTheme: themeId,
+      }, { merge: true });
+
+      return { ok: true, themeId };
+    }
+
+    const owned = d.ownedItems || [];
     if (owned.includes(itemId)) return { ok: false, reason: "already-owned" };
 
     const coins = d.coins || 0;
@@ -405,6 +425,13 @@ export async function purchaseItem(uid, itemId, cost) {
 export async function setActiveMascot(uid, itemId) {
   const ref = doc(db, "users", uid);
   await setDoc(ref, { activeMascot: itemId }, { merge: true });
+}
+
+// Switches the equipped app-wide visual theme to an already-owned theme id
+// (the plain theme id, e.g. "glass" — not the "theme:glass" store item id).
+export async function setActiveTheme(uid, themeId) {
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, { activeTheme: themeId }, { merge: true });
 }
 
 /* ---------------------------------- profile ------------------------------------ */

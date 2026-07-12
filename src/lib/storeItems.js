@@ -6,6 +6,7 @@
 // STORE_ITEMS (needed on first paint, to resolve the active mascot icon)
 // without pulling in the whole Store component/UI code — that stays
 // lazy-loaded and is only fetched when the Store modal is actually opened.
+import { THEME_LIST } from "../themeDefinitions";
 
 export const COSMIC_VOYAGER_PACK = [
   { id: "drago-astronaut", name: "Astronaut Drago", img: "/store/drago-astronaut.webp", price: 5 },
@@ -32,10 +33,25 @@ export const BLACK_PACK = [
   { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.webp", price: 500 },
 ];
 
+// App-wide visual themes (e.g. "Glass"), purchasable/equippable the same
+// way as mascots but stored under a distinct id namespace ("theme:<id>")
+// so a theme id never collides with a mascot id in ownedItems/activeMascot.
+export const APP_THEMES_PACK = THEME_LIST
+  .filter((t) => !t.default)
+  .map((t) => ({
+    id: `theme:${t.id}`,
+    themeId: t.id,
+    name: `${t.name} Theme`,
+    price: t.price,
+    isTheme: true,
+    preview: t.preview,
+  }));
+
 // Flat lookup used elsewhere in the app (e.g. resolving the active mascot image).
 export const STORE_ITEMS = [...COSMIC_VOYAGER_PACK, ...MOOD_PACK, ...BLACK_PACK];
 
 export const PACKS = [
+  { title: "App Themes", items: APP_THEMES_PACK, layout: "theme" },
   { title: "Cosmic Voyager Theme Pack", items: COSMIC_VOYAGER_PACK, layout: "grid" },
   { title: "Mood Pack", items: MOOD_PACK, layout: "list" },
   { title: "Black", items: BLACK_PACK, layout: "grid" },
