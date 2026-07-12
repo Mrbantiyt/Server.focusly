@@ -117,6 +117,11 @@ export default function AskAiExternal({ user, billing, aiUsage, dayKey }) {
           <div className="font-body text-xs" style={{ color: COL.sub }}>
             NoteGPT doesn't allow embedding, so it needs to open in its own tab.
           </div>
+          {limitSeconds !== null && (
+            <div className="font-body text-[11px]" style={{ color: COL.sub }}>
+              {formatMMSS(Math.max(0, limitSeconds - liveUsedSeconds))} left today
+            </div>
+          )}
           <button
             onClick={openNewTab}
             className="mt-1 px-4 py-2 rounded-xl text-sm font-semibold"
