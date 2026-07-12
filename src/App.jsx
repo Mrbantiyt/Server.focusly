@@ -10,6 +10,7 @@ import { useGameStats } from "./hooks/useGameStats";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
 import { watchUserProfile } from "./lib/firestore";
+import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
 
@@ -68,13 +69,21 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
-  // Lifetime study seconds across all days (today included), used both by
-  // Settings' "Total study time" stat and to rank this user on the
-  // leaderboard — see the totalStudySeconds prop passed to Settings below
-  // for why `dayKey` is excluded from the history sum (today comes from
-  // the live todaySeconds instead, to avoid double counting).
+  // Lifetime study seconds across all days (today included), used by
+  // Settings' "Total study time" stat (dayKey excluded from the history sum
+  // since today comes from the live todaySeconds instead, to avoid double
+  // counting).
   const totalStudySeconds =
     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds;
+
+  // Study seconds since THIS week's Monday (today included) — what the
+  // leaderboard now ranks on, so it naturally resets every Monday.
+  const weekStartKey = getWeekStartKey();
+  const weeklyStudySeconds =
+    Object.entries(history).reduce(
+      (sum, [k, v]) => sum + (k >= weekStartKey && k !== dayKey ? v : 0),
+      0
+    ) + todaySeconds;
   // When set, Settings mounts straight into that section (e.g. "billing")
   // instead of its main menu — used by the "Upgrade plan" button on the
   // Ask AI time-limit card. Cleared once consumed so navigating to
@@ -114,13 +123,21 @@ export default function App() {
     : null;
 
   // Keeps this user's public leaderboard/{uid} mirror doc in sync (username,
-  // lifetime study time, streak, level) and, while the Leaderboard page is
-  // open, live-watches the global top-50 list.
+  // lifetime + this-week study time, streak, level) and, while a
+  // leaderboard view is open, live-watches the ranked list — ranked by
+  // THIS WEEK's study time only, so it resets every Monday.
+  // Also enabled while Settings' Weekly Analytics panel is open, so the
+  // "Your rank in leaderboard" stat there has live data too.
   const { rows: leaderboardRows, loading: leaderboardLoading } = useLeaderboard(
     user?.uid,
-    { username: profile?.username, totalStudySeconds, streak: gameStats.streak, level: gameStats.level },
-    showLeaderboard
+    { username: profile?.username, totalStudySeconds, weeklyStudySeconds, streak: gameStats.streak, level: gameStats.level },
+    showLeaderboard || settingsInitialSection === "analytics" || (tab === "settings"),
+    { weekly: true }
   );
+
+  const myLeaderboardRank = user?.uid
+    ? (leaderboardRows.findIndex((r) => r.uid === user.uid) + 1) || null
+    : null;
 
   // If running inside the Median-wrapped native app, capture this device's
   // OneSignal push subscription id so the server-side reminder cron job
@@ -211,6 +228,8 @@ export default function App() {
                   initialSection={settingsInitialSection}
                   totalStudySeconds={totalStudySeconds}
                   onLogout={logout}
+                  onOpenLeaderboard={() => setShowLeaderboard(true)}
+                  myLeaderboardRank={myLeaderboardRank}
                 />
               )}
             </div>
