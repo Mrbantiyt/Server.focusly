@@ -334,7 +334,7 @@ function StatTile({ icon: Icon, accent, label, value, note }) {
   );
 }
 
-function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins, streak, level, billing, onBack }) {
+function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins, streak, level, billing, myLeaderboardRank, onBack }) {
   const effectivePlan = getEffectivePlan(billing);
   const planLabel = PLAN_LABELS[effectivePlan];
   const daysRemaining = getDaysRemaining(billing);
@@ -349,6 +349,9 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, hist
   const bestDay = thisWeek.reduce((best, d) => (d.seconds > (best?.seconds ?? -1) ? d : best), null);
   const bestDayLabel = bestDay && bestDay.seconds > 0 ? bestDay.date.toLocaleDateString(undefined, { weekday: "long" }) : "—";
 
+  const rankLabel = myLeaderboardRank ? `#${myLeaderboardRank}` : "—";
+  const rankNote = myLeaderboardRank ? "Resets every Monday" : "Study to get ranked";
+
   return (
     <div className="flex flex-col gap-5">
       <PanelHeader title="Your data" onBack={onBack} />
@@ -362,6 +365,7 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, hist
         <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(weeklyTotal)} note="Last 7 days" />
         <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(dailyAverage)} note="Per day this week" />
         <StatTile icon={Flame} accent={COL.coral} label="Best day" value={fmtHrs(bestDay?.seconds || 0)} note={bestDayLabel} />
+        <StatTile icon={Trophy} accent={COL.mint} label="Your rank in leaderboard" value={rankLabel} note={rankNote} />
       </div>
     </div>
   );
@@ -727,7 +731,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
     return (
       <YourDataPanel
         tasks={tasks} taskStats={taskStats} todaySeconds={todaySeconds} totalStudySeconds={totalStudySeconds}
-        history={history} dayKey={dayKey} coins={coins} streak={streak} level={level} billing={billing} onBack={() => setSection(null)}
+        history={history} dayKey={dayKey} coins={coins} streak={streak} level={level} billing={billing} myLeaderboardRank={myLeaderboardRank} onBack={() => setSection(null)}
       />
     );
   }
