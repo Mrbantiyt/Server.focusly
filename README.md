@@ -19,6 +19,15 @@ npm install
    yahi repo ka `firestore.rules` file Firestore console me paste kar do
    (ya `firebase deploy --only firestore:rules` agar Firebase CLI use kar rahe ho).
    Ye rule ensure karta hai ki har user sirf apna hi data padh/likh sake.
+3. **Weekly leaderboard index**: `firestore.indexes.json` me ek composite
+   index diya hai (`weekStartKey` + `weeklyStudySeconds`) jo weekly (Monday
+   reset) leaderboard query ke liye zaroori hai. Deploy karo:
+   ```bash
+   firebase deploy --only firestore:indexes
+   ```
+   Ya Firebase CLI na ho to: app chalao, ek baar Leaderboard kholo — console
+   me ek error aayega jisme ek direct link hoga index create karne ke liye,
+   uspe click karke "Create Index" daba do (build hone me 1-2 min lagte hain).
 
 `src/firebase.js` me tumhara config already daala hua hai — kuch change nahi karna.
 

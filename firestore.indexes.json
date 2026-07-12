@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "leaderboard",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "weekStartKey", "order": "ASCENDING" },
+        { "fieldPath": "weeklyStudySeconds", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
