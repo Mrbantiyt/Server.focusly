@@ -51,6 +51,13 @@ if (AI_API_URL.includes("generativelanguage.googleapis.com/v1beta/openai") && GE
   AI_MODEL = GEMINI_ALIAS_MAP[AI_MODEL];
 }
 
+// Optional fallback provider — used only if the primary call fails (network
+// error, 5xx, timeout). Leave AI_API_KEY_FALLBACK unset to disable this;
+// the code just skips straight to returning the primary error in that case.
+const AI_API_URL_FALLBACK = process.env.AI_API_BASE_URL_FALLBACK || "https://api.openai.com/v1/chat/completions";
+const AI_MODEL_FALLBACK = process.env.AI_MODEL_FALLBACK || "gpt-4o-mini";
+const AI_API_KEY_FALLBACK = process.env.AI_API_KEY_FALLBACK;
+
 const SYSTEM_PROMPT =
   "You are Focusly AI, a friendly study assistant inside a student productivity app. " +
   "When shown a photo of notes, a textbook page, or a whiteboard, read it carefully and " +
@@ -106,7 +113,7 @@ async function handler(req, res) {
   }
 
   // Rate limit AFTER auth so we key on a real, verified uid (can't be spoofed).
-  const rl = await checkRateLimit("openai-chat", decoded.uid, { requests: 50, windowSeconds: 60 });
+  const rl = await checkRateLimit("openai-chat", decoded.uid, { requests: 500, windowSeconds: 60 });
   if (!rl.success) {
     res.setHeader("Retry-After", "60");
     return res.status(429).json({ error: "Too many requests — please slow down and try again shortly." });
@@ -133,10 +140,28 @@ async function handler(req, res) {
   const openaiMessages = buildOpenaiMessages(messages, images);
 
   try {
-    const result = await callProvider(AI_API_URL, AI_API_KEY, AI_MODEL, openaiMessages);
+    let result = await callProvider(AI_API_URL, AI_API_KEY, AI_MODEL, openaiMessages);
+
+    // Fallback: only on transport/server failure, and only if a fallback key
+    // is configured. Don't fall back on 4xx (that's a real client-side error,
+    // e.g. bad request) — only on 5xx/network issues where the primary
+    // provider itself is the problem.
+    if ((!result.ok && result.status >= 500) && AI_API_KEY_FALLBACK) {
+      try {
+        result = await callProvider(AI_API_URL_FALLBACK, AI_API_KEY_FALLBACK, AI_MODEL_FALLBACK, openaiMessages);
+      } catch (fallbackErr) {
+        // keep the original result/error if the fallback itself throws
+      }
+    }
 
     if (!result.ok) {
-      return res.status(result.status).json({ error: result.data.error?.message || "AI provider error" });
+      // TEMP DEBUG: surface the raw provider response so we can see the
+      // real cause instead of the generic "AI provider error" fallback.
+      // Remove this once diagnosed — it may leak provider-specific details.
+      console.error("AI provider error:", result.status, JSON.stringify(result.data));
+      return res.status(result.status).json({
+        error: result.data.error?.message || `AI provider error (status ${result.status}): ${JSON.stringify(result.data).slice(0, 300)}`,
+      });
     }
 
     const reply = result.data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a reply.";
