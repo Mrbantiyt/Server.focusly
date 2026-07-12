@@ -187,7 +187,7 @@ export default function App() {
               {tab === "home" && (
                 <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
                   tasks={tasks} notesCount={notes.length} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
-                  unreadCount={unreadCount}
+                  unreadCount={unreadCount} myLeaderboardRank={myLeaderboardRank}
                   onOpenNotifications={() => {
                     setShowNotifications(true);
                     if (user?.uid) markAllRead(user.uid, notifications);
