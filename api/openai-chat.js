@@ -155,13 +155,20 @@ async function handler(req, res) {
     }
 
     if (!result.ok) {
-      // TEMP DEBUG: surface the raw provider response so we can see the
-      // real cause instead of the generic "AI provider error" fallback.
-      // Remove this once diagnosed — it may leak provider-specific details.
+      // Log the raw provider response for our own debugging, but never show
+      // that raw JSON to the user — translate it into a friendly message.
       console.error("AI provider error:", result.status, JSON.stringify(result.data));
-      return res.status(result.status).json({
-        error: result.data.error?.message || `AI provider error (status ${result.status}): ${JSON.stringify(result.data).slice(0, 300)}`,
-      });
+
+      let userMessage;
+      if (result.status === 429) {
+        userMessage = images.length > 0
+          ? "You've reached the image limit for now — please try again later or ask without an image."
+          : "You've reached the usage limit for now — please try again in a little while.";
+      } else {
+        userMessage = "Something went wrong talking to the AI. Please try again in a moment.";
+      }
+
+      return res.status(result.status).json({ error: userMessage });
     }
 
     const reply = result.data.choices?.[0]?.message?.content || "Sorry, I couldn't generate a reply.";
