@@ -1,6 +1,6 @@
 // src/components/StatusBar.jsx
 import React from "react";
-import { Flame, Shield } from "lucide-react";
+import { Flame, Shield, Trophy } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtCompact } from "../lib/time";
 
@@ -16,7 +16,7 @@ function Pill({ children, onClick }) {
   );
 }
 
-export default function StatusBar({ streak, level, coins, mascotSrc, onOpenStreak, onOpenLevel, onOpenStore }) {
+export default function StatusBar({ streak, level, coins, mascotSrc, onOpenStreak, onOpenLevel, onOpenStore, onOpenLeaderboard }) {
   return (
     <div className="flex items-center justify-between">
       <button onClick={onOpenStore} className="active:scale-95 transition">
@@ -29,6 +29,10 @@ export default function StatusBar({ streak, level, coins, mascotSrc, onOpenStrea
       </button>
 
       <div className="flex items-center gap-2">
+        <button onClick={onOpenLeaderboard} style={neu(false, 999)} className="w-8 h-8 flex items-center justify-center active:scale-95 transition">
+          <Trophy size={14} color={COL.gold} />
+        </button>
+
         <Pill onClick={onOpenStreak}>
           <Flame size={14} color={streak > 0 ? COL.coral : COL.sub} />
           <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>{streak}</span>
