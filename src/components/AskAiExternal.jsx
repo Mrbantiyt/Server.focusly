@@ -1,6 +1,6 @@
 // src/components/AskAiExternal.jsx
 //
-// Embeds NoteGPT (https://chatgpt.com/) inside the app via an iframe,
+// Embeds NoteGPT (https://notrack.ai/chat) inside the app via an iframe,
 // gated behind a daily TIME budget per plan (Free 5min / Team 30min /
 // Max unlimited — see AI_TIME_LIMITS_MIN in lib/billing.js).
 //
@@ -16,7 +16,7 @@ import { COL, neu } from "../theme";
 import { getEffectivePlan, getAiTimeLimitSeconds, PLAN_LABELS, PLAN } from "../lib/billing";
 import { addAiUsageSeconds } from "../lib/firestore";
 
-const NOTEGPT_URL = "https://chatgpt.com/";
+const NOTEGPT_URL = "https://notrack.ai/chat";
 const PERSIST_INTERVAL_MS = 10000; // how often we flush elapsed time to Firestore
 // If the iframe hasn't fired onLoad within this window, we assume it's
 // stuck or blocked (ad-blocker, extension, network filter, CSP, X-Frame-
