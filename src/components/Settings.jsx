@@ -3,7 +3,7 @@
 // Redesigned as a menu list (matching the reference screenshots) instead of
 // one long scrolling page. Tapping a row opens that section as a full-panel
 // overlay with a back button, then returns to the same menu.
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
@@ -16,6 +16,7 @@ import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from ".
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
+import { useAllStoreItems } from "../lib/storeOverrides";
 import { LeaderboardPanel } from "./Leaderboard";
 
 /* ------------------------------- shared bits ------------------------------- */
@@ -82,7 +83,8 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
   // keeps every profile picture a known, safe, pre-approved image rather
   // than user-uploaded content.
   const owned = ownedItems || [];
-  const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
+  const allItems = useAllStoreItems(STORE_ITEMS);
+  const collection = allItems.filter((it) => owned.includes(it.id));
 
   const choosePhoto = async (item) => {
     setSavingDp(true);
@@ -203,7 +205,8 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
 
 function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
   const owned = ownedItems || [];
-  const collection = STORE_ITEMS.filter((it) => owned.includes(it.id));
+  const allItems = useAllStoreItems(STORE_ITEMS);
+  const collection = allItems.filter((it) => owned.includes(it.id));
 
   const handleEquip = async (itemId) => {
     if (!uid) return;
