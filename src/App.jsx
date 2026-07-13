@@ -22,6 +22,7 @@ import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
 import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
+import VerifyEmailBanner from "./components/VerifyEmailBanner";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
 import NotificationsPanel from "./components/NotificationsPanel";
@@ -50,7 +51,7 @@ const NAV = [
 const EMPTY_TASKS = [];
 
 export default function App() {
-  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout } = useAuth();
+  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp } = useAuth();
   const [tab, setTab] = useState("home");
   const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
@@ -178,6 +179,9 @@ export default function App() {
         ) : (
           <>
             <div className="px-5 pt-5">
+              {profile && !profile.emailVerified && (
+                <VerifyEmailBanner email={profile.email} onSendOtp={sendOtp} onVerifyOtp={verifyOtp} />
+              )}
               <StatusBar
                 streak={gameStats.streak}
                 level={gameStats.level}
