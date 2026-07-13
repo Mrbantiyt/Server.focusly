@@ -45,8 +45,11 @@ export function useAuth() {
   // (throws if taken) so we never end up with an auth account whose
   // username reservation silently failed. The account is created and
   // signed in immediately (unverified) — a 6-digit OTP is emailed right
-  // after, and Login.jsx prompts the user to enter it. The account isn't
-  // blocked on verification; emailVerified just stays false until they do.
+  // after. The Firebase session has to stay alive for that OTP call (send/
+  // verify both require an ID token), but App.jsx gates the UI: while
+  // emailVerified is false it shows a blocking "verify your email" screen
+  // instead of the dashboard, so the account can't actually be used until
+  // the code is entered.
   const signupWithEmail = async ({ username, email, password }) => {
     const available = await isUsernameAvailable(username);
     if (!available) throw new Error("That username is already taken.");
