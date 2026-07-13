@@ -22,7 +22,7 @@ import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
 import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
-import VerifyEmailBanner from "./components/VerifyEmailBanner";
+import VerifyEmailGate from "./components/VerifyEmailGate";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
 import NotificationsPanel from "./components/NotificationsPanel";
@@ -123,6 +123,10 @@ export default function App() {
         displayName: profileDoc?.name || user.displayName,
         photoURL: profileDoc?.photoURL || user.photoURL,
         username: profileDoc?.username || null,
+        // Set true by /api/verify-otp once the user enters the correct
+        // code. Read here so the VerifyEmailBanner actually disappears
+        // after verification instead of showing forever.
+        emailVerified: profileDoc?.emailVerified || false,
         // Whether this account can change its password here (only accounts
         // that signed up with email/password have one to change — Google
         // accounts manage their password with Google instead).
@@ -176,12 +180,11 @@ export default function App() {
             onLoginWithEmail={loginWithEmail}
             onResetPassword={resetPassword}
           />
+        ) : profile && !profile.emailVerified ? (
+          <VerifyEmailGate email={profile.email} onSendOtp={sendOtp} onVerifyOtp={verifyOtp} onLogout={logout} />
         ) : (
           <>
             <div className="px-5 pt-5">
-              {profile && !profile.emailVerified && (
-                <VerifyEmailBanner email={profile.email} onSendOtp={sendOtp} onVerifyOtp={verifyOtp} />
-              )}
               <StatusBar
                 streak={gameStats.streak}
                 level={gameStats.level}
