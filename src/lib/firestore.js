@@ -431,6 +431,16 @@ export function watchUserProfile(uid, cb) {
   return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
 }
 
+// Live-watches the single config/appUpdate doc that drives the "app update
+// available" banner at the top of the app. Written only by the admin panel
+// (Admin SDK, bypasses firestore.rules) — this is a read-only listener, so
+// toggling it on/off in the admin panel shows/hides the banner for every
+// signed-in user within a second or two, no app redeploy needed.
+export function watchAppUpdateConfig(cb) {
+  const ref = doc(db, "config", "appUpdate");
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+}
+
 /* --------------------------------- usernames ------------------------------------ */
 // A separate `usernames/{usernameLower}` collection is used as a reservation
 // table so we can atomically guarantee no two users ever hold the same
