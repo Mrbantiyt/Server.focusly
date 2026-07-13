@@ -8,6 +8,23 @@ import {
 import { auth } from "../firebase";
 import { ensureUserProfile, claimUsername, getEmailForUsername, isUsernameAvailable, repairUsernameEmail } from "../lib/firestore";
 
+// Calls a same-origin /api endpoint with the current user's Firebase ID
+// token attached, so the server can trust req.uid without the client being
+// able to spoof it. Used for the OTP send/verify endpoints.
+async function callWithAuth(path, body) {
+  const current = auth.currentUser;
+  if (!current) throw new Error("Not signed in.");
+  const idToken = await current.getIdToken();
+  const resp = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  return data;
+}
+
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +43,10 @@ export function useAuth() {
 
   // Signs up with username + email + password. Reserves the username first
   // (throws if taken) so we never end up with an auth account whose
-  // username reservation silently failed.
+  // username reservation silently failed. The account is created and
+  // signed in immediately (unverified) — a 6-digit OTP is emailed right
+  // after, and Login.jsx prompts the user to enter it. The account isn't
+  // blocked on verification; emailVerified just stays false until they do.
   const signupWithEmail = async ({ username, email, password }) => {
     const available = await isUsernameAvailable(username);
     if (!available) throw new Error("That username is already taken.");
@@ -42,6 +62,16 @@ export function useAuth() {
       await signOut(auth);
       throw e;
     }
+
+    // Best-effort: don't fail signup itself if the OTP email couldn't be
+    // sent (e.g. mailer misconfigured) — the user can retry from the
+    // verification screen ("Resend code").
+    try {
+      await callWithAuth("/api/send-otp");
+    } catch {
+      // swallow — Login.jsx's verification screen offers a resend button
+    }
+
     return result.user;
   };
 
@@ -67,5 +97,12 @@ export function useAuth() {
 
   const logout = () => signOut(auth);
 
-  return { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout };
+  // Requests a fresh OTP be emailed to the currently signed-in user.
+  const sendOtp = () => callWithAuth("/api/send-otp");
+
+  // Verifies the OTP the user typed; on success the server sets
+  // users/{uid}.emailVerified = true.
+  const verifyOtp = (otp) => callWithAuth("/api/verify-otp", { otp });
+
+  return { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp };
 }
