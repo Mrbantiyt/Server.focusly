@@ -10,6 +10,7 @@
 // Fetched once per app session (not live-subscribed) since store pricing
 // changes are infrequent and this only needs to be fresh-ish, not realtime.
 
+import { useState, useEffect } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -77,4 +78,27 @@ export function applyStoreOverrides(packs, { overrides, custom }) {
   }
 
   return merged;
+}
+
+// Convenience hook for anywhere that just needs the full FLAT item list
+// (base items with overrides applied, plus custom items appended) rather
+// than the pack-grouped structure — e.g. resolving a single item by id for
+// "currently equipped mascot" or "owned items" lookups outside the Store
+// panel itself (App.jsx header, Settings > Account/Customize panels).
+export function useAllStoreItems(baseItems) {
+  const [items, setItems] = useState(baseItems);
+  useEffect(() => {
+    let cancelled = false;
+    loadStoreOverrides().then(({ overrides, custom }) => {
+      if (cancelled) return;
+      const withOverrides = baseItems.map((item) => {
+        const o = overrides[item.id];
+        return o ? { ...item, name: o.name ?? item.name, price: o.price ?? item.price } : item;
+      });
+      const customAsItems = custom.map((c) => ({ id: c.id, name: c.name, price: c.price, img: c.imageUrl }));
+      setItems([...withOverrides, ...customAsItems]);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return items;
 }
