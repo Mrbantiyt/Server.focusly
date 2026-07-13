@@ -9,7 +9,7 @@ import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
-import { watchUserProfile } from "./lib/firestore";
+import { watchUserProfile, watchAppUpdateConfig } from "./lib/firestore";
 import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -22,6 +22,7 @@ import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
 import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
+import UpdateBanner from "./components/UpdateBanner";
 import VerifyEmailGate from "./components/VerifyEmailGate";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
@@ -116,6 +117,13 @@ export default function App() {
     return watchUserProfile(user.uid, setProfileDoc);
   }, [user]);
 
+  // "App is now updated" banner — controlled from the admin panel. Watched
+  // independently of the user profile (not gated on `user`) so it's ready
+  // the moment the main app screen mounts, and updates live if an admin
+  // flips it on/off while the app is already open.
+  const [appUpdateConfig, setAppUpdateConfig] = useState(null);
+  useEffect(() => watchAppUpdateConfig(setAppUpdateConfig), []);
+
   const profile = user
     ? {
         uid: user.uid,
@@ -185,6 +193,7 @@ export default function App() {
         ) : (
           <>
             <div className="px-5 pt-5">
+              <UpdateBanner config={appUpdateConfig} />
               <StatusBar
                 streak={gameStats.streak}
                 level={gameStats.level}
