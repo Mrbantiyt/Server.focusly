@@ -27,6 +27,7 @@ import StreakModal from "./components/StreakModal";
 import NotificationsPanel from "./components/NotificationsPanel";
 import Store, { STORE_ITEMS } from "./components/Store";
 import Leaderboard from "./components/Leaderboard";
+import { useAllStoreItems } from "./lib/storeOverrides";
 import { AppLoadingSkeleton } from "./components/Skeleton";
 
 const FONT = (
@@ -95,7 +96,13 @@ export default function App() {
     setTab("settings");
   };
 
-  const activeMascotItem = STORE_ITEMS.find((it) => it.id === gameStats.activeMascot);
+  // All purchasable mascots: hardcoded base list plus any admin-added
+  // custom items / name-price overrides from Firestore (see Store.jsx for
+  // the full merge logic — this mirrors it at the App level so a custom
+  // mascot the user has set as active resolves correctly here too, not
+  // just inside the Store panel itself).
+  const allStoreItems = useAllStoreItems(STORE_ITEMS);
+  const activeMascotItem = allStoreItems.find((it) => it.id === gameStats.activeMascot);
   const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
 
   // Custom profile overrides (name / DP) stored in Firestore, layered on
