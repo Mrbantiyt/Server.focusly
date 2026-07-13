@@ -2,7 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      // A client may read/write their own profile, but may never set
+      // emailVerified themselves — that flag is only ever written by
+      // api/verify-otp.js using the Admin SDK (which bypasses these rules),
+      // after the user has proven ownership of the email via OTP. Without
+      // this carve-out, a user could just set emailVerified: true on
+      // themselves and skip verification entirely.
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && !("emailVerified" in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.get("emailVerified", null) == resource.data.get("emailVerified", null);
+      allow delete: if request.auth != null && request.auth.uid == uid;
 
       match /studyDays/{dayKey} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
@@ -24,6 +35,16 @@ service cloud.firestore {
         allow read, update, delete: if request.auth != null && request.auth.uid == uid;
         allow create: if false;
       }
+    }
+
+    // otps/{uid} = { otpHash, expiresAt, attempts, createdAt }
+    // Written and read ONLY by api/send-otp.js and api/verify-otp.js via the
+    // Admin SDK, which bypasses these rules entirely. Deliberately fully
+    // locked down here — a client must never be able to read a hash to
+    // attempt offline brute-forcing, plant its own "verified" OTP doc, or
+    // reset another user's attempts counter.
+    match /otps/{uid} {
+      allow read, write: if false;
     }
 
     // usernames/{usernameLower} = { uid }
