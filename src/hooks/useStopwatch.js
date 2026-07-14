@@ -151,14 +151,26 @@ export function useStopwatch(uid) {
     if (next) {
       // starting/resuming: mark the real start time of this run
       runStartedAtRef.current = Date.now();
+      setRunning(next);
     } else {
-      // pausing: bank the real elapsed time and stop tracking a run start
+      // pausing: bank the real elapsed time, save it, then hard-refresh the
+      // page. A full reload forces every piece of state (this hook, the
+      // Firestore listeners, everything upstream in App.jsx) to rebuild
+      // from scratch off freshly-fetched data, which sidesteps any stale
+      // in-memory state entirely. We wait for the Firestore write to
+      // finish first so the reload always picks up the just-banked time
+      // instead of racing it.
       const banked = Math.floor(liveStopwatch());
       bankedRef.current = banked;
       runStartedAtRef.current = null;
-      if (uid) setStudyDay(uid, dayKey, banked);
+      setRunning(next);
+      const doReload = () => window.location.reload();
+      if (uid) {
+        setStudyDay(uid, dayKey, banked).then(doReload).catch(doReload);
+      } else {
+        doReload();
+      }
     }
-    setRunning(next);
   };
 
   // Flush immediately if the tab goes to background or closes while running,
