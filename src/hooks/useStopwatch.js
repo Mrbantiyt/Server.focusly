@@ -61,12 +61,27 @@ export function useStopwatch(uid) {
     forceTick((n) => n + 1);
   };
 
+  const loadedForRef = useRef(null); // `${uid}|${dayKey}` this hook's state currently reflects
+
   // load today's value once, then keep listening for cross-device changes
   useEffect(() => {
     if (!uid) return;
-    bankedRef.current = 0;
-    sessionBaseRef.current = 0;
-    runStartedAtRef.current = runningRef.current ? Date.now() : null;
+    const loadKey = `${uid}|${dayKey}`;
+    // Guard against wiping an in-progress (possibly running, non-zero)
+    // stopwatch just because this effect instance re-ran for a reason
+    // other than an actual uid/dayKey change — e.g. a parent re-render
+    // recreating the `user` object reference, or React re-invoking effects.
+    // Only zero the local state the FIRST time we see this uid+dayKey
+    // combination; every subsequent run for the same combination just
+    // re-subscribes without touching bankedRef, so pausing (which
+    // triggers a re-render) can never appear to reset the timer to 0.
+    const isFreshLoad = loadedForRef.current !== loadKey;
+    loadedForRef.current = loadKey;
+    if (isFreshLoad) {
+      bankedRef.current = 0;
+      sessionBaseRef.current = 0;
+      runStartedAtRef.current = runningRef.current ? Date.now() : null;
+    }
 
     let cancelled = false;
     // Guard the live subscription the same way the one-time getStudyDay()
