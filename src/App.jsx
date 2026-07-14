@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
-import { useStopwatch } from "./hooks/useStopwatch";
+import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
@@ -54,7 +54,10 @@ const EMPTY_TASKS = [];
 export default function App() {
   const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp } = useAuth();
   const [tab, setTab] = useState("home");
-  const { seconds, todaySeconds, running, toggle, reset, dayKey } = useStopwatch(user?.uid);
+  const {
+    remaining: timerRemaining, durationSeconds: timerDuration, running, finished: timerFinished,
+    todaySeconds, setDuration: setTimerDuration, start: startTimer, pause: pauseTimer, reset: resetTimer, dayKey,
+  } = useCountdownTimer(user?.uid);
   const history = useStudyHistory(user?.uid, 31);
   // Tasks tab was removed and replaced by Notes. `tasks` is kept as a
   // stable empty array (not lifted from a hook anymore) purely so the
@@ -208,7 +211,9 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               {tab === "home" && (
-                <Dashboard user={profile} bankedSeconds={todaySeconds} displaySeconds={seconds} running={running} onToggle={toggle} onReset={reset}
+                <Dashboard user={profile} bankedSeconds={todaySeconds}
+                  timerRemaining={timerRemaining} timerDuration={timerDuration} timerRunning={running} timerFinished={timerFinished}
+                  onTimerSetDuration={setTimerDuration} onTimerStart={startTimer} onTimerPause={pauseTimer} onTimerReset={resetTimer}
                   tasks={tasks} notesCount={notes.length} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
                   unreadCount={unreadCount} myLeaderboardRank={myLeaderboardRank}
                   onOpenNotifications={() => {
