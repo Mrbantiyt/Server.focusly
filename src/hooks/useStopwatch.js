@@ -121,21 +121,29 @@ export function useStopwatch(uid) {
   }, [uid, dayKey]);
 
   const toggle = () => {
-    setRunning((r) => {
-      const next = !r;
-      runningRef.current = next;
-      if (next) {
-        // starting/resuming: mark the real start time of this run
-        runStartedAtRef.current = Date.now();
-      } else {
-        // pausing: bank the real elapsed time and stop tracking a run start
-        const banked = Math.floor(liveStopwatch());
-        bankedRef.current = banked;
-        runStartedAtRef.current = null;
-        if (uid) setStudyDay(uid, dayKey, banked);
-      }
-      return next;
-    });
+    // Side effects (ref mutations, Firestore write) must NOT live inside the
+    // setRunning updater. React can invoke a state updater more than once
+    // for a single call (StrictMode's double-invoke, or fast repeated
+    // taps before a re-render flushes) — if the ref mutations happened
+    // inside the updater, a double-invoke would double-toggle
+    // runStartedAtRef/bankedRef, causing the visible time to jump and the
+    // Play/Pause button to feel unresponsive or "stuck" on rapid taps.
+    // Doing the real work here, once, keyed off runningRef.current (not
+    // the possibly-stale `running` state), makes toggle() idempotent per
+    // actual click.
+    const next = !runningRef.current;
+    runningRef.current = next;
+    if (next) {
+      // starting/resuming: mark the real start time of this run
+      runStartedAtRef.current = Date.now();
+    } else {
+      // pausing: bank the real elapsed time and stop tracking a run start
+      const banked = Math.floor(liveStopwatch());
+      bankedRef.current = banked;
+      runStartedAtRef.current = null;
+      if (uid) setStudyDay(uid, dayKey, banked);
+    }
+    setRunning(next);
   };
 
   // Flush immediately if the tab goes to background or closes while running,
