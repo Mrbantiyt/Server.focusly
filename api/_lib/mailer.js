@@ -44,7 +44,7 @@ export async function sendOtpEmail({ to, otp, username }) {
     from: `"Focusly" <${from}>`,
     to,
     subject: `${otp} is your Focusly verification code`,
-    text: `Hi ${username || "there"},\n\nYour Focusly verification code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n\n— Focusly`,
+    text: `Hi focusly user Mr ${username || "there"},\n\nYour Focusly verification code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, you can safely ignore this email.\n\n— Focusly`,
     html: `
       <div style="font-family: -apple-system, sans-serif; max-width: 420px; margin: 0 auto; padding: 24px;">
         <h2 style="color:#15151C; margin-bottom: 4px;">Verify your email</h2>
