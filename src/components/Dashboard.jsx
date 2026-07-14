@@ -3,7 +3,8 @@ import React from "react";
 import { Bell, Sparkles, LogOut } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
-import { StopwatchCard, StatCard } from "./StopwatchCard";
+import { StatCard } from "./StopwatchCard";
+import { TimerCard } from "./TimerCard";
 import { AnalyticsContent } from "./Settings";
 
 function getGreeting() {
@@ -14,7 +15,10 @@ function getGreeting() {
   return "Good night";
 }
 
-export default function Dashboard({ user, bankedSeconds, displaySeconds, running, onToggle, onReset, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank }) {
+export default function Dashboard({
+  user, bankedSeconds, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank,
+  timerRemaining, timerDuration, timerRunning, timerFinished, onTimerSetDuration, onTimerStart, onTimerPause, onTimerReset,
+}) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
 
@@ -54,7 +58,17 @@ export default function Dashboard({ user, bankedSeconds, displaySeconds, running
         <StatCard label="Notes" value={`${notesCount}`} sub={notesCount === 1 ? "note saved" : "notes saved"} accent={COL.mint} />
       </div>
 
-      <StopwatchCard seconds={displaySeconds} running={running} onToggle={onToggle} onReset={onReset} />
+      <TimerCard
+        remaining={timerRemaining}
+        durationSeconds={timerDuration}
+        running={timerRunning}
+        finished={timerFinished}
+        todaySeconds={bankedSeconds}
+        onSetDuration={onTimerSetDuration}
+        onStart={onTimerStart}
+        onPause={onTimerPause}
+        onReset={onTimerReset}
+      />
 
       <button
         onClick={goChat}
