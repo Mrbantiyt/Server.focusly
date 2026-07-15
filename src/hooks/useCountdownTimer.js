@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dayKeyFor } from "../lib/time";
 import { getStudyDay, setStudyDay, watchStudyDay } from "../lib/firestore";
+import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timerNotifications";
 
 // ---------------------------------------------------------------------------
 // MODEL — replaces the old auto-counting stopwatch with a manual countdown.
@@ -84,6 +85,11 @@ export function useCountdownTimer(uid) {
         runningRef.current = false;
         setRunning(false);
         setFinished(true);
+        // The countdown reached 0 naturally — the scheduled push (if any)
+        // is about to fire on its own from the server side; nothing to
+        // cancel here. If it was somehow already delivered early or lost,
+        // that's a rare edge case the in-app alert loop below still covers
+        // while the app is open.
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, 1000);
@@ -106,11 +112,18 @@ export function useCountdownTimer(uid) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Ask the server to push a "timer complete" notification after however
+    // many seconds are left right now, so the alert still reaches the user
+    // if they background or close the app before it finishes.
+    scheduleTimerNotification(remainingRef.current);
   };
 
   const pause = () => {
     runningRef.current = false;
     setRunning(false);
+    // Countdown stopped early — cancel the pending push so it doesn't fire
+    // later for a timer that's no longer counting down.
+    cancelTimerNotification();
   };
 
   const toggle = () => {
@@ -126,6 +139,7 @@ export function useCountdownTimer(uid) {
     remainingRef.current = durationSeconds;
     setRemaining(durationSeconds);
     setFinished(false);
+    cancelTimerNotification();
   };
 
   return {
