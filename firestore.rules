@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      // A client may read/write their own profile, but may never set
+      // emailVerified themselves — that flag is only ever written by
+      // api/verify-otp.js using the Admin SDK (which bypasses these rules),
+      // after the user has proven ownership of the email via OTP. Without
+      // this carve-out, a user could just set emailVerified: true on
+      // themselves and skip verification entirely.
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && !("emailVerified" in request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.get("emailVerified", null) == resource.data.get("emailVerified", null);
+      allow delete: if request.auth != null && request.auth.uid == uid;
+
+      match /studyDays/{dayKey} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      match /tasks/{taskId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      match /aiChat/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      match /notes/{noteId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+      // Sent by the admin panel via the Admin SDK (bypasses these rules
+      // entirely for that write). Client-side, a user may only read their
+      // own notifications and update/delete them (marking read, claiming
+      // a reward, deleting) — never create one for themselves.
+      match /notifications/{notifId} {
+        allow read, update, delete: if request.auth != null && request.auth.uid == uid;
+        allow create: if false;
+      }
+    }
+
+    // config/appUpdate = {
+    //   enabled, title, message, buttonText, url, updatedAt,
+    //   updatedByAdminUid, updatedByAdminEmail
+    // }
+    // Drives the "app update available" banner shown at the top of the app
+    // for every signed-in user. Only ever written by the admin panel's
+    // api/app-update.js via the Admin SDK (bypasses these rules entirely)
+    // — a client may read it (so the banner can show/hide live) but can
+    // never write it, so a user can't fake or dismiss-for-everyone an
+    // update banner themselves.
+    match /config/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // otps/{uid} = { otpHash, expiresAt, attempts, createdAt }
+    // Written and read ONLY by api/send-otp.js and api/verify-otp.js via the
+    // Admin SDK, which bypasses these rules entirely. Deliberately fully
+    // locked down here — a client must never be able to read a hash to
+    // attempt offline brute-forcing, plant its own "verified" OTP doc, or
+    // reset another user's attempts counter.
+    match /otps/{uid} {
+      allow read, write: if false;
+    }
+
+    // emailChangeOtps/{uid} = { otpHash, newEmail, expiresAt, attempts, createdAt }
+    // Same reasoning as otps/{uid} above, for the change-email flow —
+    // written and read ONLY by api/request-email-change.js and
+    // api/confirm-email-change.js via the Admin SDK. Fully locked down so a
+    // client can't read the pending newEmail/hash, brute-force it, or plant
+    // its own doc to redirect someone else's account to an attacker email.
+    match /emailChangeOtps/{uid} {
+      allow read, write: if false;
+    }
+
+    // usernames/{usernameLower} = { uid }
+    // Publicly readable so the client can check username availability
+    // (isUsernameAvailable) before signup. Deliberately does NOT store
+    // email anymore — it used to, so that username-login could resolve an
+    // email before the user was authenticated, but since this doc must be
+    // public, that leaked every registered user's email to anyone who
+    // could guess/enumerate a username. That lookup now goes through
+    // api/resolve-username.js (server-side, Admin SDK) instead, which
+    // reads email from the private users/{uid} doc. Writes are still
+    // locked down — only the user who owns that uid can claim/release a
+    // username, and the doc may never contain anything but uid.
+    match /usernames/{usernameLower} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(["uid"]);
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(["uid"]);
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+    }
+
+    // leaderboard/{uid} = {
+    //   username, totalStudySeconds, streak, level, updatedAt,
+    //   weeklyStudySeconds, weekStartKey
+    // }
+    // Public mirror doc used ONLY for the global leaderboard — deliberately
+    // separate from the private users/{uid} doc so nothing sensitive
+    // (email, billing, etc.) is ever exposed here. Any signed-in user may
+    // read the whole collection (needed to render the ranked list), but a
+    // user may only ever write to their OWN doc (uid == auth.uid), and only
+    // these fields — never anything else. weeklyStudySeconds/weekStartKey
+    // back the "resets every Monday" leaderboard view.
+    match /leaderboard/{uid} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(["username", "totalStudySeconds", "streak", "level", "updatedAt", "weeklyStudySeconds", "weekStartKey"]);
+      allow delete: if false;
+    }
+
+    // storeItemOverrides/{itemId} = { name?, price? }
+    // Admin-set name/price overrides for hardcoded (built-in) store items.
+    // Written ONLY by the admin panel via the Admin SDK (bypasses these
+    // rules entirely). Clients only ever need to read this collection so
+    // the Store UI can merge overrides onto the hardcoded item list live.
+    match /storeItemOverrides/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // storeItemsCustom/{itemId} = { name, price, imageUrl, pack }
+    // Fully custom items added from the admin panel (e.g. "Golden drago"),
+    // merged onto the hardcoded pack list client-side. Written ONLY by the
+    // admin panel via the Admin SDK. Clients only ever read.
+    match /storeItemsCustom/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // redeemCodes/{CODE} = { plan, days, used, createdAt, redeemedBy, redeemedAt }
+    // Every doc here is provisioned AHEAD OF TIME by an admin using the
+    // Firebase Admin SDK (see scripts/generate-redeem-codes.js), which
+    // bypasses these rules entirely for that write — that's what makes a
+    // code "authorized" in the first place. A code is never valid merely
+    // because a string matches some expected shape; it's valid only if a
+    // document for that exact code exists here.
+    //
+    // Clients can NEVER create a redeemCodes doc (allow create: if false),
+    // so nobody can self-issue their own code, however code-shaped it is.
+    // The only write a client may make is flipping a single existing code
+    // from used:false to used:true when claiming it for themselves — and
+    // even then, the plan/days on the doc must stay exactly as the admin
+    // set them, so a client can't grant itself a different plan or a
+    // longer validity period while "redeeming" a real code.
+    match /redeemCodes/{code} {
+      allow read: if request.auth != null;
+      allow create: if false;
+      allow update: if request.auth != null
+        && resource.data.used == false
+        && request.resource.data.used == true
+        && request.resource.data.redeemedBy == request.auth.uid
+        && request.resource.data.plan == resource.data.plan
+        && request.resource.data.days == resource.data.days;
+      allow delete: if false;
+    }
+  }
+}

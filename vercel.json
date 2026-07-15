@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/send-study-reminders", "schedule": "30 12 * * *" },
+    { "path": "/api/backup-export", "schedule": "0 3 * * 0" }
+  ]
+}
