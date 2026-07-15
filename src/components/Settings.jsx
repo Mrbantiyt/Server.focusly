@@ -260,10 +260,18 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
 
 /* -------------------------------- Notifications -------------------------------- */
 
-function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, onBack }) {
+function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, oneSignalUserId, onRefreshPushStatus, onBack }) {
   const [enabled, setEnabled] = useState(studyReminder?.enabled ?? false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Force an immediate OneSignal status re-check every time this screen
+  // opens, instead of waiting for App.jsx's 15s background poll — so
+  // right after granting push permission (or fixing it in phone Settings)
+  // the person can just come back here and see it update.
+  useEffect(() => {
+    onRefreshPushStatus?.();
+  }, [onRefreshPushStatus]);
 
   const onToggle = async () => {
     const next = !enabled;
@@ -279,22 +287,28 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, onBac
     }
   };
 
+  // The Firestore-persisted oneSignalUserId is the source of truth for
+  // whether this device is actually reachable (it's what the server-side
+  // reminder job reads), so "Connected" is driven by its presence rather
+  // than only the moment-to-moment pushStatus below. pushStatus still adds
+  // detail underneath — e.g. explaining *why* it's not connected yet.
+  const isConnected = !!oneSignalUserId;
+
   // Plain-language explanation of pushStatus.state, so the person can tell
   // exactly what's happening without opening a browser console. Written for
   // someone non-technical: what's true right now, and — if something's
   // wrong — the one concrete thing to try next.
   const statusDisplay = (() => {
-    const state = pushStatus?.state;
     if (!isMedianApp) return null; // the existing "only works in the app" notice below already covers this case
+    if (isConnected) return null; // the badge above already says "Connected" — no extra detail needed
+    const state = pushStatus?.state;
     switch (state) {
       case "checking":
         return { color: COL.sub, dot: COL.sub, text: "Checking notification status…" };
-      case "connected":
-        return { color: COL.mint, dot: COL.mint, text: "Connected — this device can receive notifications." };
       case "no-permission":
-        return { color: COL.gold, dot: COL.gold, text: "Not connected yet — push permission hasn't been granted on this device. Look for a notification permission popup, or check your phone's Settings → Apps → Focusly → Notifications and turn it on." };
+        return { color: COL.gold, dot: COL.gold, text: "Push permission hasn't been granted on this device yet. Look for a notification permission popup, or check your phone's Settings → Apps → Focusly → Notifications and turn it on." };
       case "bridge-unavailable":
-        return { color: COL.coral, dot: COL.coral, text: "Not connected — this app build can't reach the notification service. This usually means the app needs to be reinstalled/rebuilt with notifications configured." };
+        return { color: COL.coral, dot: COL.coral, text: "This app build can't reach the notification service. This usually means the app needs to be reinstalled/rebuilt with notifications configured." };
       case "error":
         return { color: COL.coral, dot: COL.coral, text: "Something went wrong checking notification status. Try closing and reopening the app." };
       default:
@@ -312,6 +326,15 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, onBac
           <div className="font-body text-xs leading-relaxed" style={{ color: COL.sub }}>
             Push notifications only work in the Focusly app (not in a browser tab). You can still turn this
             on here — it'll take effect once you open Focusly from the app.
+          </div>
+        </div>
+      )}
+
+      {isMedianApp && (
+        <div style={neu(true, 20)} className="p-4 flex items-center gap-2.5">
+          <div className="flex-shrink-0 rounded-full" style={{ width: 8, height: 8, background: isConnected ? COL.mint : COL.gold }} />
+          <div className="font-display font-semibold text-sm" style={{ color: isConnected ? COL.mint : COL.gold }}>
+            {isConnected ? "Connected" : "Not connected yet"}
           </div>
         </div>
       )}
@@ -906,7 +929,7 @@ function ChangeEmailPanel({ user, requestEmailChange, confirmEmailChange, onBack
 
 
 
-export default function Settings({ user, pushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
+export default function Settings({ user, pushStatus, oneSignalUserId = null, onRefreshPushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -916,6 +939,7 @@ export default function Settings({ user, pushStatus, tasks, taskStats, todaySeco
     return (
       <NotificationsPanel
         uid={user.uid} studyReminder={studyReminder} isMedianApp={isMedianApp} pushStatus={pushStatus}
+        oneSignalUserId={oneSignalUserId} onRefreshPushStatus={onRefreshPushStatus}
         onBack={() => setSection(null)}
       />
     );
