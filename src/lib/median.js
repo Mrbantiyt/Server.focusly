@@ -82,11 +82,11 @@ export async function syncPushSubscription(uid) {
 
     if (!oneSignalUserId) {
       console.warn(`${LOG_PREFIX} No oneSignalUserId yet — user likely hasn't granted push permission, or OneSignal hasn't finished registering this device. Will retry on next poll.`);
-      return { state: "no-permission" };
+      return { state: "no-permission", rawInfo: info };
     }
     await updateUserProfile(uid, { oneSignalUserId, pushSubscribed: subscribed });
     console.log(`${LOG_PREFIX} Saved oneSignalUserId to Firestore profile.`);
-    return { state: "connected", oneSignalUserId, subscribed };
+    return { state: "connected", oneSignalUserId, subscribed, rawInfo: info };
   } catch (err) {
     console.error(`${LOG_PREFIX} onesignalInfo() call failed:`, err);
     return { state: "error", message: err?.message || String(err) };
