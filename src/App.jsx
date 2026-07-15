@@ -166,15 +166,25 @@ export default function App() {
 
   // If running inside the Median-wrapped native app, capture this device's
   // OneSignal push subscription id so the server-side reminder cron job
-  // (see api/send-study-reminders.js) knows which device to notify. No-ops
-  // in a regular browser tab. Re-checked periodically since the OneSignal
-  // id may only become available a moment after the user grants push
-  // permission on first launch.
+  // (see api/send-study-reminders.js) and the timer-completion notification
+  // (see api/schedule-timer-notification.js) know which device to notify.
+  // No-ops in a regular browser tab. Re-checked periodically since the
+  // OneSignal id may only become available a moment after the user grants
+  // push permission on first launch. The status is kept in state (rather
+  // than only logged) so Settings > Notifications can show the person
+  // exactly what's happening, without needing to open a browser console.
+  const [pushStatus, setPushStatus] = useState({ state: "checking" });
   useEffect(() => {
-    if (!user?.uid || !isMedianApp()) return;
-    syncPushSubscription(user.uid);
-    const id = setInterval(() => syncPushSubscription(user.uid), 15000);
-    return () => clearInterval(id);
+    if (!user?.uid || !isMedianApp()) { setPushStatus({ state: "not-median" }); return; }
+    let cancelled = false;
+    const run = () => {
+      syncPushSubscription(user.uid).then((status) => {
+        if (!cancelled && status) setPushStatus(status);
+      });
+    };
+    run();
+    const id = setInterval(run, 15000);
+    return () => { cancelled = true; clearInterval(id); };
   }, [user?.uid]);
 
   return (
@@ -242,6 +252,7 @@ export default function App() {
               {tab === "settings" && (
                 <Settings
                   user={profile}
+                  pushStatus={pushStatus}
                   tasks={tasks}
                   taskStats={gameStats.taskStats}
                   coins={gameStats.coins}
