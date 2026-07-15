@@ -107,5 +107,36 @@ export function useAuth() {
   // users/{uid}.emailVerified = true.
   const verifyOtp = (otp) => callWithAuth("/api/verify-otp", { otp });
 
-  return { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp };
+  // --- Change email (2-step: request OTP on the NEW address, then confirm) ---
+  // Step 1: server validates newEmail isn't taken and emails an OTP to it.
+  // Nothing on the account changes yet.
+  const requestEmailChange = (newEmail) => callWithAuth("/api/request-email-change", { newEmail });
+
+  // Step 2: server verifies the OTP and applies the change (Firebase Auth
+  // email + users/{uid}.email) via the Admin SDK. The client's cached ID
+  // token still has the OLD email baked into its claims at this point, so
+  // we force a token refresh right after — without this, `auth.currentUser`
+  // would keep showing the old email in the UI until the token happened to
+  // refresh on its own (Firebase does this automatically, but not
+  // instantly).
+  const confirmEmailChange = async (otp) => {
+    const result = await callWithAuth("/api/confirm-email-change", { otp });
+    if (auth.currentUser) {
+      await auth.currentUser.getIdToken(true); // force refresh
+      await auth.currentUser.reload();
+      // auth.currentUser is mutated in place by reload(), but React won't
+      // know to re-render off that alone — onAuthStateChanged only fires
+      // for actual sign-in/sign-out, not for a profile field changing
+      // underneath an already-signed-in user. Re-setting user here (to a
+      // fresh object reference) is what makes the new email show up
+      // immediately anywhere `user.email` is read in the UI.
+      setUser({ ...auth.currentUser });
+    }
+    return result;
+  };
+
+  return {
+    user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp,
+    requestEmailChange, confirmEmailChange,
+  };
 }
