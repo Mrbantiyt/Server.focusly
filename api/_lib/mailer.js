@@ -63,3 +63,31 @@ function escapeHtml(str) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+// Sends the verification code for an EMAIL CHANGE request specifically —
+// same visual style as sendOtpEmail above, but with copy that makes clear
+// this code is for changing the account's email rather than first-time
+// signup verification (so a user doesn't confuse the two if they somehow
+// have both flows open).
+export async function sendEmailChangeOtpEmail({ to, otp, username }) {
+  const t = getTransporter();
+  const from = process.env.GMAIL_USER;
+
+  await t.sendMail({
+    from: `"Focusly" <${from}>`,
+    to,
+    subject: `${otp} is your Focusly email change code`,
+    text: `Hi ${username || "there"},\n\nWe received a request to change the email on your Focusly account to this address. Your verification code is: ${otp}\n\nThis code expires in 10 minutes. If you didn't request this, you can safely ignore this email — your account email will not change.\n\n— Focusly`,
+    html: `
+      <div style="font-family: -apple-system, sans-serif; max-width: 420px; margin: 0 auto; padding: 24px;">
+        <h2 style="color:#15151C; margin-bottom: 4px;">Confirm your new email</h2>
+        <p style="color:#555; font-size: 14px;">Hi ${escapeHtml(username || "there")}, use this code to confirm this address as your new Focusly account email:</p>
+        <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; text-align: center; padding: 20px; margin: 16px 0; background: #f4f4f7; border-radius: 12px; color: #15151C;">
+          ${otp}
+        </div>
+        <p style="color:#888; font-size: 12px;">This code expires in 10 minutes. If you didn't request this, you can safely ignore this email — your account email will not change.</p>
+      </div>
+    `,
+  });
+}
+
