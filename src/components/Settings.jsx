@@ -13,7 +13,7 @@ import {
 import { COL, neu } from "../theme";
 import { fmtHrs, fmtCompact, getWeekStartKey } from "../lib/time";
 import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from "../lib/firestore";
-import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS } from "../lib/billing";
+import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS, XP_PER_TICK_BY_PLAN, COINS_PER_MINUTE_BY_PLAN } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
 import { useAllStoreItems } from "../lib/storeOverrides";
@@ -550,13 +550,17 @@ function PlanBadge({ plan }) {
 }
 
 // Static reference table shown at the bottom of the panel — sourced
-// directly from AI_MESSAGE_LIMITS in lib/billing.js so it can never drift
-// from the actual enforced limits.
+// directly from AI_MESSAGE_LIMITS / XP_PER_TICK_BY_PLAN / COINS_PER_MINUTE_BY_PLAN
+// in lib/billing.js so it can never drift from the actual enforced limits.
 const PLAN_LIMIT_ROWS = [
   { plan: PLAN.FREE, limit: getAiMessageLimit(null) },
   { plan: PLAN.TEAM, limit: getAiMessageLimit({ plan: PLAN.TEAM, expiresAt: { toMillis: () => Date.now() + 86400000 } }) },
   { plan: PLAN.MAX, limit: getAiMessageLimit({ plan: PLAN.MAX, expiresAt: { toMillis: () => Date.now() + 86400000 } }) },
-];
+].map((row) => ({
+  ...row,
+  xpPerTick: XP_PER_TICK_BY_PLAN[row.plan],
+  coinsPerMinute: COINS_PER_MINUTE_BY_PLAN[row.plan],
+}));
 
 function BillingPanel({ uid, billing, onBack }) {
   const effectivePlan = getEffectivePlan(billing);
@@ -669,12 +673,22 @@ function BillingPanel({ uid, billing, onBack }) {
         {redeemSuccess && <div className="font-body text-[11px]" style={{ color: COL.mint }}>{redeemSuccess}</div>}
       </div>
 
-      <div style={neu(true, 18)} className="p-4 flex flex-col gap-1.5">
+      <div style={neu(true, 18)} className="p-4 flex flex-col gap-3">
         <div className="font-display font-semibold text-xs mb-1" style={{ color: COL.ink }}>Plan limits</div>
-        {PLAN_LIMIT_ROWS.map(({ plan, limit }) => (
-          <div key={plan} className="flex items-center justify-between font-body text-xs" style={{ color: COL.sub }}>
-            <span>{PLAN_LABELS[plan]}</span>
-            <span>{limit === null ? "Unlimited" : `${limit} min`} / day</span>
+        {PLAN_LIMIT_ROWS.map(({ plan, limit, xpPerTick, coinsPerMinute }) => (
+          <div key={plan} className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between font-body text-xs" style={{ color: COL.ink }}>
+              <span className="font-semibold">{PLAN_LABELS[plan]}</span>
+              <span>{limit === null ? "Unlimited" : `${limit} min`} / day</span>
+            </div>
+            <div className="flex items-center justify-between font-body text-[11px]" style={{ color: COL.sub }}>
+              <span>XP</span>
+              <span>{xpPerTick} XP / 10s</span>
+            </div>
+            <div className="flex items-center justify-between font-body text-[11px]" style={{ color: COL.sub }}>
+              <span>Coins</span>
+              <span>{coinsPerMinute} coins / min</span>
+            </div>
           </div>
         ))}
       </div>
