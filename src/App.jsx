@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
@@ -186,6 +186,17 @@ export default function App() {
     return () => { cancelled = true; clearInterval(id); };
   }, [user?.uid]);
 
+  // Lets Settings > Notifications force an immediate re-check (rather than
+  // waiting for the next 15s poll) the moment that screen opens — e.g.
+  // right after the person grants push permission and backgrounds/
+  // foregrounds the app, or just to confirm the connection is still good.
+  const refreshPushStatus = useCallback(() => {
+    if (!user?.uid || !isMedianApp()) return;
+    syncPushSubscription(user.uid).then((status) => {
+      if (status) setPushStatus(status);
+    });
+  }, [user?.uid]);
+
   return (
     <div className="w-full flex items-center justify-center" style={{ background: COL.bg, minHeight: "100dvh" }}>
       {FONT}
@@ -252,6 +263,8 @@ export default function App() {
                 <Settings
                   user={profile}
                   pushStatus={pushStatus}
+                  oneSignalUserId={profileDoc?.oneSignalUserId || null}
+                  onRefreshPushStatus={refreshPushStatus}
                   tasks={tasks}
                   taskStats={gameStats.taskStats}
                   coins={gameStats.coins}
