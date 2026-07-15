@@ -62,6 +62,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // emailChangeOtps/{uid} = { otpHash, newEmail, expiresAt, attempts, createdAt }
+    // Same reasoning as otps/{uid} above, for the change-email flow —
+    // written and read ONLY by api/request-email-change.js and
+    // api/confirm-email-change.js via the Admin SDK. Fully locked down so a
+    // client can't read the pending newEmail/hash, brute-force it, or plant
+    // its own doc to redirect someone else's account to an attacker email.
+    match /emailChangeOtps/{uid} {
+      allow read, write: if false;
+    }
+
     // usernames/{usernameLower} = { uid }
     // Publicly readable so the client can check username availability
     // (isUsernameAvailable) before signup. Deliberately does NOT store
