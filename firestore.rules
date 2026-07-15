@@ -115,6 +115,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // storeItemOverrides/{itemId} = { name?, price? }
+    // Admin-set name/price overrides for hardcoded (built-in) store items.
+    // Written ONLY by the admin panel via the Admin SDK (bypasses these
+    // rules entirely). Clients only ever need to read this collection so
+    // the Store UI can merge overrides onto the hardcoded item list live.
+    match /storeItemOverrides/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // storeItemsCustom/{itemId} = { name, price, imageUrl, pack }
+    // Fully custom items added from the admin panel (e.g. "Golden drago"),
+    // merged onto the hardcoded pack list client-side. Written ONLY by the
+    // admin panel via the Admin SDK. Clients only ever read.
+    match /storeItemsCustom/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // redeemCodes/{CODE} = { plan, days, used, createdAt, redeemedBy, redeemedAt }
     // Every doc here is provisioned AHEAD OF TIME by an admin using the
     // Firebase Admin SDK (see scripts/generate-redeem-codes.js), which
