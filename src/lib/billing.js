@@ -61,3 +61,32 @@ export function getDaysRemaining(billing) {
   const expiresAtMs = billing.expiresAt?.toMillis ? billing.expiresAt.toMillis() : new Date(billing.expiresAt).getTime();
   return Math.max(0, Math.ceil((expiresAtMs - Date.now()) / (24 * 60 * 60 * 1000)));
 }
+
+// ---------------------------------------------------------------------------
+// Plan-based focus-session rewards (XP + coins).
+// ---------------------------------------------------------------------------
+// XP: awarded every REWARD_TICK_MS of active (running) focus-session time,
+// at a rate that depends on the user's current EFFECTIVE plan.
+export const XP_PER_TICK_BY_PLAN = {
+  [PLAN.FREE]: 5,
+  [PLAN.TEAM]: 25,
+  [PLAN.MAX]: 50,
+};
+export const REWARD_TICK_MS = 10000; // 10 seconds
+
+// Coins: awarded once per full completed minute of active focus-session
+// time, at a rate that depends on plan. Partial minutes never pay out.
+export const COINS_PER_MINUTE_BY_PLAN = {
+  [PLAN.FREE]: 100,
+  [PLAN.TEAM]: 200,
+  [PLAN.MAX]: 500,
+};
+export const COIN_MINUTE_MS = 60000; // 60 seconds
+
+export function getXpPerTick(billing) {
+  return XP_PER_TICK_BY_PLAN[getEffectivePlan(billing)];
+}
+
+export function getCoinsPerMinute(billing) {
+  return COINS_PER_MINUTE_BY_PLAN[getEffectivePlan(billing)];
+}

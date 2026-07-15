@@ -6,7 +6,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { dayKeyFor } from "./time";
-import { PLAN } from "./billing";
+import { PLAN, getXpPerTick, getCoinsPerMinute } from "./billing";
 
 
 /* ---------------------------- study day (stopwatch) ---------------------------- */
@@ -345,7 +345,75 @@ export async function addXp(uid, amount) {
   return result;
 }
 
-// Transactional so two logins firing near-simultaneously (e.g. two tabs
+// Credits focus-session XP + coins for a chunk of newly-completed reward
+// units. `newXpTicks` = number of NEW 10s reward-ticks to credit right now;
+// `newCoinMinutes` = number of NEW full completed minutes to credit right
+// now. Both are DELTAS (not running totals) — the caller (useGameStats) is
+// responsible for only ever counting each tick/minute once, the same way
+// useCountdownTimer's bankSeconds() only ever banks each elapsed second
+// once. That guarantee comes from ticks/minutes being derived from a
+// monotonic local ref that's only ever incremented forward, mirrored to
+// localStorage so a minimize/reload resumes it instead of restarting it —
+// never from re-deriving "time elapsed" from wall-clock math that could
+// double count.
+//
+// Reward RATES are looked up here from the user's OWN billing doc on the
+// server side — never trusted from the caller — so a tampered/replayed
+// client call can influence *how many* ticks/minutes it claims but can
+// never claim a richer plan's payout per tick/minute than the account
+// actually has.
+//
+// Wrapped in a transaction for the same reason as addXp: two near-
+// simultaneous flushes (double-fired interval, two tabs) must not both
+// read the same stale xp/coins and clobber each other.
+export async function addFocusRewards(uid, newXpTicks, newCoinMinutes) {
+  const xpTicks = Math.max(0, Math.floor(newXpTicks) || 0);
+  const coinMinutes = Math.max(0, Math.floor(newCoinMinutes) || 0);
+  if (xpTicks <= 0 && coinMinutes <= 0) return null;
+
+  const ref = doc(db, "users", uid);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+
+    const prevXp = d.xp || 0;
+    const prevCoins = d.coins || 0;
+
+    const xpPerTick = getXpPerTick(d.billing);
+    const coinsPerMinute = getCoinsPerMinute(d.billing);
+
+    const xpAwarded = xpTicks * xpPerTick;
+    const focusCoinsAwarded = coinMinutes * coinsPerMinute;
+
+    const newXp = prevXp + xpAwarded;
+
+    // Level-up coin bonus (existing behavior) still applies on top of the
+    // per-minute focus coins above — leveling up from XP has always paid
+    // out level*1000 coins, and this keeps that intact.
+    const prevLevel = levelFromXp(prevXp).level;
+    const newLevel = levelFromXp(newXp).level;
+    let levelUpCoins = 0;
+    for (let lvl = prevLevel + 1; lvl <= newLevel; lvl++) {
+      levelUpCoins += lvl * 1000;
+    }
+
+    const newCoins = prevCoins + focusCoinsAwarded + levelUpCoins;
+
+    tx.set(ref, { xp: newXp, coins: newCoins }, { merge: true });
+
+    return {
+      xp: newXp,
+      coins: newCoins,
+      xpAwarded,
+      coinsAwarded: focusCoinsAwarded + levelUpCoins,
+      level: newLevel,
+      levelsGained: Math.max(0, newLevel - prevLevel),
+    };
+  });
+}
+
+
 // open right at midnight rollover) can't both read "not logged in today
 // yet" and both increment the streak — the second one now sees the first
 // one's write and correctly no-ops instead of double-counting.
