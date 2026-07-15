@@ -4,7 +4,7 @@ import { X, Check } from "lucide-react";
 import { COL, neu } from "../theme";
 import { purchaseItem, setActiveMascot } from "../lib/firestore";
 import { fmtCompact } from "../lib/time";
-import { loadStoreOverrides, applyStoreOverrides } from "../lib/storeOverrides";
+import { watchStoreOverrides, applyStoreOverrides } from "../lib/storeOverrides";
 
 // All purchasable mascots, grouped into packs.
 // `img` files live in /public/store/ (served from site root as /store/...).
@@ -62,16 +62,15 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
   const [allItems, setAllItems] = useState(STORE_ITEMS);
 
   useEffect(() => {
-    let cancelled = false;
-    loadStoreOverrides().then((result) => {
-      if (cancelled) return;
+    // Live subscription: if the admin edits an item's price/name or adds a
+    // new custom item while this Store screen is already open, it updates
+    // here automatically — no need to close and reopen the Store.
+    const unsub = watchStoreOverrides((result) => {
       const merged = applyStoreOverrides(BASE_PACKS, result);
       setPacks(merged);
       setAllItems(merged.flatMap((p) => p.items));
     });
-    return () => {
-      cancelled = true;
-    };
+    return unsub;
   }, []);
 
   const owned = ownedItems || [];

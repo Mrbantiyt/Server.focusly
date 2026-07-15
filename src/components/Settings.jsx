@@ -260,7 +260,7 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
 
 /* -------------------------------- Notifications -------------------------------- */
 
-function NotificationsPanel({ uid, studyReminder, isMedianApp, onBack }) {
+function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, onBack }) {
   const [enabled, setEnabled] = useState(studyReminder?.enabled ?? false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -279,6 +279,29 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, onBack }) {
     }
   };
 
+  // Plain-language explanation of pushStatus.state, so the person can tell
+  // exactly what's happening without opening a browser console. Written for
+  // someone non-technical: what's true right now, and — if something's
+  // wrong — the one concrete thing to try next.
+  const statusDisplay = (() => {
+    const state = pushStatus?.state;
+    if (!isMedianApp) return null; // the existing "only works in the app" notice below already covers this case
+    switch (state) {
+      case "checking":
+        return { color: COL.sub, dot: COL.sub, text: "Checking notification status…" };
+      case "connected":
+        return { color: COL.mint, dot: COL.mint, text: "Connected — this device can receive notifications." };
+      case "no-permission":
+        return { color: COL.gold, dot: COL.gold, text: "Not connected yet — push permission hasn't been granted on this device. Look for a notification permission popup, or check your phone's Settings → Apps → Focusly → Notifications and turn it on." };
+      case "bridge-unavailable":
+        return { color: COL.coral, dot: COL.coral, text: "Not connected — this app build can't reach the notification service. This usually means the app needs to be reinstalled/rebuilt with notifications configured." };
+      case "error":
+        return { color: COL.coral, dot: COL.coral, text: "Something went wrong checking notification status. Try closing and reopening the app." };
+      default:
+        return null;
+    }
+  })();
+
   return (
     <div className="flex flex-col gap-5">
       <PanelHeader title="Notifications" onBack={onBack} />
@@ -289,6 +312,15 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, onBack }) {
           <div className="font-body text-xs leading-relaxed" style={{ color: COL.sub }}>
             Push notifications only work in the Focusly app (not in a browser tab). You can still turn this
             on here — it'll take effect once you open Focusly from the app.
+          </div>
+        </div>
+      )}
+
+      {statusDisplay && (
+        <div style={neu(true, 20)} className="p-4 flex items-start gap-2.5">
+          <div className="mt-1.5 flex-shrink-0 rounded-full" style={{ width: 8, height: 8, background: statusDisplay.dot }} />
+          <div className="font-body text-xs leading-relaxed" style={{ color: statusDisplay.color }}>
+            {statusDisplay.text}
           </div>
         </div>
       )}
@@ -716,7 +748,7 @@ function ChangePasswordPanel({ user, onBack }) {
 
 /* ------------------------------------ main ------------------------------------ */
 
-export default function Settings({ user, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
+export default function Settings({ user, pushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -725,7 +757,7 @@ export default function Settings({ user, tasks, taskStats, todaySeconds, totalSt
   if (section === "notifications") {
     return (
       <NotificationsPanel
-        uid={user.uid} studyReminder={studyReminder} isMedianApp={isMedianApp}
+        uid={user.uid} studyReminder={studyReminder} isMedianApp={isMedianApp} pushStatus={pushStatus}
         onBack={() => setSection(null)}
       />
     );

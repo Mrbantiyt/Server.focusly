@@ -17,7 +17,13 @@ export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPass
   const [password, setPassword] = useState("");
   const [resetEmail, setResetEmail] = useState("");
 
-  const [lampOn, setLampOn] = useState(false);
+  // The lamp used to require the user to manually drag/click a cord before
+  // the login form would appear — a fun detail, but it added an extra
+  // interaction step before people could actually sign in, and made the
+  // login page feel slow to load. It now turns on automatically as soon as
+  // the page mounts, so the form is usable immediately; the lamp visuals
+  // are kept purely as decoration.
+  const [lampOn, setLampOn] = useState(true);
   const [cordY, setCordY] = useState(0);
 
   const hitAreaRef = useRef(null);
@@ -194,11 +200,7 @@ export default function Login({ onSignupWithEmail, onLoginWithEmail, onResetPass
         </svg>
       </div>
 
-      {!lampOn && (
-        <div className="font-body text-xs" style={{ color: "#8C8CA1" }}>
-          Pull the cord to turn on the light
-        </div>
-      )}
+      {/* Lamp starts on automatically now — no hint text needed. */}
 
       {/* Login card, revealed when lamp is on */}
       <div
