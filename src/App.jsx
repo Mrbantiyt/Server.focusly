@@ -52,7 +52,7 @@ const NAV = [
 const EMPTY_TASKS = [];
 
 export default function App() {
-  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp } = useAuth();
+  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp, requestEmailChange, confirmEmailChange } = useAuth();
   const [tab, setTab] = useState("home");
   const {
     remaining: timerRemaining, durationSeconds: timerDuration, running, finished: timerFinished,
@@ -67,7 +67,16 @@ export default function App() {
   // re-render tick) is gone for good, which is also a real perf win.
   const tasks = EMPTY_TASKS;
   const { notes } = useNotes(user?.uid);
-  const gameStats = useGameStats(user?.uid, running);
+  // Custom profile overrides (name / DP / billing) stored in Firestore,
+  // layered on top of the Google-auth user. Declared here (before
+  // gameStats) so its `billing` field can be passed straight into
+  // useGameStats below for plan-aware XP/coin reward rates.
+  const [profileDoc, setProfileDoc] = useState(null);
+  useEffect(() => {
+    if (!user) { setProfileDoc(null); return; }
+    return watchUserProfile(user.uid, setProfileDoc);
+  }, [user]);
+  const gameStats = useGameStats(user?.uid, running, profileDoc?.billing);
   const { notifications, unreadCount } = useNotifications(user?.uid);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
@@ -109,16 +118,6 @@ export default function App() {
   const allStoreItems = useAllStoreItems(STORE_ITEMS);
   const activeMascotItem = allStoreItems.find((it) => it.id === gameStats.activeMascot);
   const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
-
-  // Custom profile overrides (name / DP) stored in Firestore, layered on
-  // top of the Google-auth user so a custom profile picture uploaded from
-  // Settings shows up everywhere (Dashboard, Settings) without touching
-  // the underlying Google account.
-  const [profileDoc, setProfileDoc] = useState(null);
-  useEffect(() => {
-    if (!user) { setProfileDoc(null); return; }
-    return watchUserProfile(user.uid, setProfileDoc);
-  }, [user]);
 
   // "App is now updated" banner — controlled from the admin panel. Watched
   // independently of the user profile (not gated on `user`) so it's ready
@@ -272,6 +271,8 @@ export default function App() {
                   myLeaderboardRank={myLeaderboardRank}
                   leaderboardRows={leaderboardRows}
                   leaderboardLoading={leaderboardLoading}
+                  requestEmailChange={requestEmailChange}
+                  confirmEmailChange={confirmEmailChange}
                 />
               )}
             </div>
