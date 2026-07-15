@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, LogOut, Pencil, Check, Flame,
   Camera, Loader2, Coins, Shield, AtSign, KeyRound, X, User, Palette, Bell,
   Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3, CreditCard, Gift, Sparkles, ExternalLink,
-  Trophy,
+  Trophy, Mail,
 } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs, fmtCompact, getWeekStartKey } from "../lib/time";
@@ -746,9 +746,153 @@ function ChangePasswordPanel({ user, onBack }) {
   );
 }
 
-/* ------------------------------------ main ------------------------------------ */
+/* --------------------------------- Change email --------------------------------- */
+// Two steps, same reasoning as the signup OTP flow:
+//   1. Confirm current password (proves it's really the account owner
+//      sitting at the keyboard) + enter the desired new email. The server
+//      (api/request-email-change.js) checks the new email isn't already
+//      taken and emails a 6-digit code to THAT NEW ADDRESS — proving the
+//      user actually controls it before anything changes.
+//   2. Enter the code. The server (api/confirm-email-change.js) verifies
+//      it and applies the change via the Admin SDK. Nothing on the account
+//      is touched until this step succeeds.
+function ChangeEmailPanel({ user, requestEmailChange, confirmEmailChange, onBack }) {
+  const [step, setStep] = useState("request"); // "request" | "verify"
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-export default function Settings({ user, pushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading }) {
+  const sendCode = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    const trimmedEmail = newEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setBusy(true);
+    try {
+      // Confirm the current password first — same reauth pattern as
+      // ChangePasswordPanel above — before asking the server to do
+      // anything, so a stale/hijacked session can't request an email
+      // change without the actual password.
+      const credential = EmailAuthProvider.credential(user.email, currentPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+
+      await requestEmailChange(trimmedEmail);
+      setStep("verify");
+      setSuccess(`Code sent to ${trimmedEmail}.`);
+    } catch (e) {
+      const code = e?.code || "";
+      if (code.includes("wrong-password") || code.includes("invalid-credential")) {
+        setError("Current password is incorrect.");
+      } else {
+        setError(e.message || "Couldn't send the code.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmCode = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError("Enter the 6-digit code.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await confirmEmailChange(otp.trim());
+      setSuccess("Email updated successfully.");
+      setOtp("");
+      setCurrentPassword("");
+      setNewEmail("");
+      setTimeout(onBack, 1200); // brief pause so the success message is visible before returning
+    } catch (e) {
+      setError(e.message || "Couldn't verify the code.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resendCode = async () => {
+    setError("");
+    setSuccess("");
+    setBusy(true);
+    try {
+      await requestEmailChange(newEmail.trim());
+      setSuccess("Code resent.");
+    } catch (e) {
+      setError(e.message || "Couldn't resend the code.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const buttonStyle = {
+    borderRadius: 12,
+    background: "linear-gradient(180deg, #5AA7FF 0%, #3D8CEF 100%)",
+    boxShadow: "8px 8px 20px rgba(0,0,0,0.55), -8px -8px 18px rgba(255,255,255,0.035)",
+    color: "#FFFFFF",
+  };
+  const inputClass = "w-full px-3 py-2.5 font-body text-sm rounded-xl outline-none";
+  const inputStyle = { background: COL.input, color: COL.ink };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PanelHeader title="Change email" onBack={onBack} />
+
+      {step === "request" ? (
+        <form onSubmit={sendCode} style={neu(false, 20)} className="p-4 flex flex-col gap-2.5">
+          <div className="font-body text-[11px] mb-1" style={{ color: COL.sub }}>
+            Current email: {user.email}
+          </div>
+          <input type="password" placeholder="Current password" value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)} autoComplete="current-password"
+            className={inputClass} style={inputStyle} />
+          <input type="email" placeholder="New email address" value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)} autoComplete="email"
+            className={inputClass} style={inputStyle} />
+          <button type="submit" disabled={busy} style={buttonStyle}
+            className="py-2.5 font-body font-semibold text-sm active:scale-[0.98] transition disabled:opacity-60">
+            {busy ? "Sending code…" : "Send verification code"}
+          </button>
+          {error && <div className="font-body text-[11px]" style={{ color: COL.coral }}>{error}</div>}
+          {success && <div className="font-body text-[11px]" style={{ color: COL.mint }}>{success}</div>}
+        </form>
+      ) : (
+        <form onSubmit={confirmCode} style={neu(false, 20)} className="p-4 flex flex-col gap-2.5">
+          <div className="font-body text-[11px] mb-1" style={{ color: COL.sub }}>
+            Enter the code sent to {newEmail.trim()}
+          </div>
+          <input type="text" inputMode="numeric" placeholder="6-digit code" value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} autoComplete="one-time-code"
+            className={inputClass} style={{ ...inputStyle, letterSpacing: 4, textAlign: "center" }} />
+          <button type="submit" disabled={busy} style={buttonStyle}
+            className="py-2.5 font-body font-semibold text-sm active:scale-[0.98] transition disabled:opacity-60">
+            {busy ? "Verifying…" : "Confirm new email"}
+          </button>
+          <button type="button" onClick={resendCode} disabled={busy}
+            className="font-body text-xs underline disabled:opacity-60" style={{ color: COL.sub }}>
+            Resend code
+          </button>
+          {error && <div className="font-body text-[11px]" style={{ color: COL.coral }}>{error}</div>}
+          {success && <div className="font-body text-[11px]" style={{ color: COL.mint }}>{success}</div>}
+        </form>
+      )}
+    </div>
+  );
+}
+
+
+
+export default function Settings({ user, pushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -788,6 +932,7 @@ export default function Settings({ user, pushStatus, tasks, taskStats, todaySeco
   }
   if (section === "howto") return <HowToUsePanel onBack={() => setSection(null)} />;
   if (section === "password") return <ChangePasswordPanel user={user} onBack={() => setSection(null)} />;
+  if (section === "email") return <ChangeEmailPanel user={user} requestEmailChange={requestEmailChange} confirmEmailChange={confirmEmailChange} onBack={() => setSection(null)} />;
 
   return (
     <div className="flex flex-col gap-1">
@@ -807,6 +952,9 @@ export default function Settings({ user, pushStatus, tasks, taskStats, todaySeco
       <MenuRow icon={HelpCircle} iconBg="rgba(255,122,133,0.15)" iconColor={COL.coral} label="How to use app" onClick={() => setSection("howto")} />
       {user.hasPasswordAuth && (
         <MenuRow icon={KeyRound} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Change password" onClick={() => setSection("password")} />
+      )}
+      {user.hasPasswordAuth && (
+        <MenuRow icon={Mail} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Change email" onClick={() => setSection("email")} />
       )}
 
       <div className="mt-2">
