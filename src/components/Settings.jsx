@@ -348,6 +348,21 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, oneSi
         </div>
       )}
 
+      {/* TEMPORARY debug panel — shows exactly what OneSignal returned, so we
+          can diagnose why oneSignalUserId is missing without a PC/console.
+          Safe to remove once the connection issue is resolved. */}
+      {isMedianApp && !isConnected && (
+        <div style={neu(true, 20)} className="p-3">
+          <div className="font-body text-[10px] mb-1" style={{ color: COL.sub }}>Debug info (pushStatus)</div>
+          <pre
+            className="font-body text-[10px] leading-snug whitespace-pre-wrap break-all"
+            style={{ color: COL.sub }}
+          >
+            {JSON.stringify(pushStatus, null, 2)}
+          </pre>
+        </div>
+      )}
+
       <div style={neu(false, 20)} className="p-4">
         <button onClick={onToggle} className="w-full flex items-center justify-between text-left">
           <div>
