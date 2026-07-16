@@ -76,8 +76,13 @@ export async function syncPushSubscription(uid) {
 
   try {
     const info = await window.median.onesignal.onesignalInfo();
-    const oneSignalUserId = info?.oneSignalUserId || null;
-    const subscribed = !!info?.oneSignalSubscribed;
+    // The new (non-legacy) OneSignal SDK returns the subscription id as
+    // `oneSignalId` and subscription status nested under
+    // `subscription.optedIn`, instead of the older `oneSignalUserId` /
+    // `oneSignalSubscribed` fields. Check both shapes so this works
+    // whether Legacy Mode is on or off in Median App Studio.
+    const oneSignalUserId = info?.oneSignalId || info?.oneSignalUserId || null;
+    const subscribed = info?.subscription?.optedIn ?? !!info?.oneSignalSubscribed;
     console.log(`${LOG_PREFIX} onesignalInfo() ->`, { oneSignalUserId, subscribed });
 
     if (!oneSignalUserId) {
