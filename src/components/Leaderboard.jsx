@@ -1,8 +1,9 @@
 // src/components/Leaderboard.jsx
-import React from "react";
+import React, { useState } from "react";
 import { X, ChevronLeft, Trophy, Flame, Shield } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
+import LeaderboardIntroAnimation from "./LeaderboardIntroAnimation";
 
 // Rank badge: gold/silver/bronze for top 3, plain number otherwise.
 function RankBadge({ rank }) {
@@ -123,10 +124,14 @@ export function LeaderboardPanel({ rows, loading, myUid, onBack }) {
 
 // Modal version — kept for the trophy icon on Home, which isn't inside the
 // Settings panel stack and needs its own overlay + close button.
+// Opens with a short Lottie intro animation instead of jumping straight to
+// the list — tap the animation to skip it if you're in a hurry.
 export default function Leaderboard({ rows, loading, myUid, onClose }) {
+  const [showIntro, setShowIntro] = useState(true);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
-      <div className="w-full max-w-sm rounded-[28px] p-6 max-h-[90vh] flex flex-col" style={{ background: COL.bg }}>
+      <div className="relative w-full max-w-sm rounded-[28px] p-6 max-h-[90vh] flex flex-col overflow-hidden" style={{ background: COL.bg }}>
         <div className="flex items-center justify-between mb-6 shrink-0">
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-full" style={neu(false, 999)}>
             <X size={16} color={COL.sub} />
@@ -135,6 +140,7 @@ export default function Leaderboard({ rows, loading, myUid, onClose }) {
           <div className="w-9 h-9" />
         </div>
         <LeaderboardBody rows={rows} loading={loading} myUid={myUid} />
+        {showIntro && <LeaderboardIntroAnimation onDone={() => setShowIntro(false)} />}
       </div>
     </div>
   );

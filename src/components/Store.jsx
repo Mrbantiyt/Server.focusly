@@ -5,6 +5,7 @@ import { COL, neu } from "../theme";
 import { purchaseItem, setActiveMascot } from "../lib/firestore";
 import { fmtCompact } from "../lib/time";
 import { watchStoreOverrides, applyStoreOverrides } from "../lib/storeOverrides";
+import StoreIntroAnimation from "./StoreIntroAnimation";
 
 // All purchasable mascots, grouped into packs.
 // `img` files live in /public/store/ (served from site root as /store/...).
@@ -60,6 +61,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
   const [error, setError] = useState(null);
   const [packs, setPacks] = useState(BASE_PACKS);
   const [allItems, setAllItems] = useState(STORE_ITEMS);
+  const [showIntro, setShowIntro] = useState(true);
 
   useEffect(() => {
     // Live subscription: if the admin edits an item's price/name or adds a
@@ -110,7 +112,8 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
-      <div className="w-full max-w-sm rounded-[28px] p-6 max-h-[90vh] overflow-y-auto" style={{ background: COL.bg }}>
+      <div className="relative w-full max-w-sm max-h-[90vh] rounded-[28px] overflow-hidden">
+        <div className="w-full h-full max-h-[90vh] overflow-y-auto p-6" style={{ background: COL.bg }}>
         <div className="flex items-center justify-between mb-6">
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-full" style={neu(false, 999)}>
             <X size={16} color={COL.sub} />
@@ -236,6 +239,8 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
             })}
           </div>
         )}
+        </div>
+        {showIntro && <StoreIntroAnimation onDone={() => setShowIntro(false)} />}
       </div>
     </div>
   );

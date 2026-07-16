@@ -1,9 +1,10 @@
 // src/components/LevelModal.jsx
-import React from "react";
+import React, { useState } from "react";
 import { X, Shield } from "lucide-react";
 import { COL, neu } from "../theme";
+import LevelUpAnimation from "./LevelUpAnimation";
 
-export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, totalXp, totalXpForNextLevel, xpPerTick, onClose }) {
+export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, totalXp, totalXpForNextLevel, xpPerTick, justLeveledUp, onClose }) {
   // Progress bar fill still reflects how far through the CURRENT level you
   // are (0-100%), but the number underneath now shows lifetime cumulative
   // XP so it never resets to a small number on level-up — see
@@ -11,9 +12,14 @@ export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, totalXp
   const pct = Math.min(100, Math.round((xpIntoLevel / xpForNextLevel) * 100));
   const fmt = (n) => Math.floor(n).toLocaleString("en-US");
 
+  // Only plays once, right when App.jsx detects gameStats.level actually
+  // increased — opening the modal manually from Settings/Home afterwards
+  // just shows the progress card straight away.
+  const [showCelebration, setShowCelebration] = useState(!!justLeveledUp);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
-      <div className="w-full max-w-sm rounded-[28px] p-6" style={{ background: COL.bg }}>
+      <div className="relative w-full max-w-sm rounded-[28px] p-6 overflow-hidden" style={{ background: COL.bg }}>
         <div className="flex items-center justify-between mb-6">
           <button onClick={onClose} className="w-9 h-9 flex items-center justify-center rounded-full" style={neu(false, 999)}>
             <X size={16} color={COL.sub} />
@@ -49,6 +55,14 @@ export default function LevelModal({ level, xpIntoLevel, xpForNextLevel, totalXp
         <div className="mt-4 font-body text-xs text-center" style={{ color: COL.sub }}>
           Earn {xpPerTick} XP every 10 seconds you study. Each level-up also pays out 1,000 coins.
         </div>
+
+        {showCelebration && (
+          <LevelUpAnimation
+            level={level}
+            coinsAwarded={1000}
+            onDone={() => setShowCelebration(false)}
+          />
+        )}
       </div>
     </div>
   );
