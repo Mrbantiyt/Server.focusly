@@ -68,7 +68,15 @@ async function createScheduledPush(playerId, sendAfterIso) {
   });
 
   const data = await resp.json();
-  if (!resp.ok) throw new Error(data?.errors?.join(", ") || "OneSignal schedule request failed");
+  // OneSignal can return HTTP 200 with an empty id and a populated `errors`
+  // array (e.g. the subscription id is unsubscribed/invalid) — that's a
+  // failed send, not a success, even though resp.ok is true. Checking only
+  // resp.ok let failures pass through silently with no notification ever
+  // actually scheduled.
+  if (!resp.ok || !data?.id) {
+    const reason = Array.isArray(data?.errors) ? data.errors.join(", ") : JSON.stringify(data?.errors || data);
+    throw new Error(reason || "OneSignal schedule request failed");
+  }
   return data.id; // OneSignal notification id — needed to cancel later
 }
 
@@ -143,7 +151,13 @@ export default async function handler(req, res) {
       if (existing?.id) await cancelScheduledPush(existing.id).catch(() => {});
 
       const sendAfter = new Date(Date.now() + delaySeconds * 1000).toISOString();
-      const notificationId = await createScheduledPush(playerId, sendAfter);
+      let notificationId;
+      try {
+        notificationId = await createScheduledPush(playerId, sendAfter);
+      } catch (err) {
+        console.error(`[schedule-timer-notification] OneSignal schedule failed for uid=${uid}, subscription_id=${playerId}:`, err.message);
+        throw err;
+      }
       await userRef.set({ timerNotification: { id: notificationId, scheduledFor: sendAfter } }, { merge: true });
 
       return res.status(200).json({ ok: true, scheduled: true, sendAfter });
