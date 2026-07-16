@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
@@ -83,6 +83,23 @@ export default function App() {
   const [showStore, setShowStore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // Detects the moment `gameStats.level` ticks up (from the live Firestore
+  // snapshot) so LevelModal can play its one-time celebration animation
+  // instead of just silently showing the new number. `prevLevelRef` starts
+  // as null so the very first load (or a page refresh) never falsely fires
+  // a celebration — only a real increase while the app is open counts.
+  const prevLevelRef = useRef(null);
+  const [justLeveledUp, setJustLeveledUp] = useState(false);
+  useEffect(() => {
+    const lvl = gameStats.level;
+    if (lvl == null) return;
+    if (prevLevelRef.current != null && lvl > prevLevelRef.current) {
+      setJustLeveledUp(true);
+      setShowLevel(true);
+    }
+    prevLevelRef.current = lvl;
+  }, [gameStats.level]);
 
   // Lifetime study seconds across all days (today included), used by
   // Settings' "Total study time" stat (dayKey excluded from the history sum
@@ -322,7 +339,8 @@ export default function App() {
           totalXp={gameStats.totalXp}
           totalXpForNextLevel={gameStats.totalXpForNextLevel}
           xpPerTick={gameStats.xpPerTick}
-          onClose={() => setShowLevel(false)}
+          justLeveledUp={justLeveledUp}
+          onClose={() => { setShowLevel(false); setJustLeveledUp(false); }}
         />
       )}
       {showStreak && (
