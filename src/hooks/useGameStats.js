@@ -74,12 +74,28 @@ function persistRewardState(uid, state) {
 // matches the plan; the actual payout is still decided server-side.
 export function useGameStats(uid, running, billing) {
   const [stats, setStats] = useState({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });
+  // True only once watchGameStats' onSnapshot callback has actually fired
+  // for the current uid — lets consumers (e.g. App.jsx's level-up
+  // detector) tell "this is the local default state, before Firestore has
+  // said anything" apart from "Firestore confirmed this is the real level",
+  // so a fresh app load's default-state level (e.g. level 1 from xp:0)
+  // is never mistaken for a real baseline that a later real snapshot
+  // could look like a level-up jump from.
+  const [loaded, setLoaded] = useState(false);
   const loginRegisteredRef = useRef(null);
 
   // live sync from Firestore
   useEffect(() => {
-    if (!uid) { setStats({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" }); return; }
-    return watchGameStats(uid, setStats);
+    if (!uid) {
+      setStats({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });
+      setLoaded(false);
+      return;
+    }
+    setLoaded(false);
+    return watchGameStats(uid, (next) => {
+      setStats(next);
+      setLoaded(true);
+    });
   }, [uid]);
 
   // credit the daily-login streak once per uid per day
@@ -189,6 +205,10 @@ export function useGameStats(uid, running, billing) {
     xpForNextLevel,
     totalXp,
     totalXpForNextLevel,
+    // True once the FIRST real Firestore snapshot for this uid has landed
+    // (see the `loaded` state above) — false during the brief window where
+    // `stats` is still just the local default.
+    loaded,
     // Exposed for optional UI feedback (e.g. "earning X XP / 10s on your
     // plan"), not required for the reward system itself to function.
     xpPerTick: getXpPerTick(billing),
