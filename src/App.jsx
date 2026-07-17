@@ -86,20 +86,44 @@ export default function App() {
 
   // Detects the moment `gameStats.level` ticks up (from the live Firestore
   // snapshot) so LevelModal can play its one-time celebration animation
-  // instead of just silently showing the new number. `prevLevelRef` starts
-  // as null so the very first load (or a page refresh) never falsely fires
-  // a celebration — only a real increase while the app is open counts.
+  // instead of just silently showing the new number.
+  //
+  // Bug this guards against: useGameStats' `stats` state starts as a local
+  // default (`xp: 0` before Firestore's first real snapshot arrives), which
+  // itself resolves to a level (e.g. level 1). The OLD guard only checked
+  // "is prevLevelRef non-null", so it still counted that default-state
+  // level as a legitimate baseline — the instant the real snapshot then
+  // landed (e.g. level 5), it read as a jump from 1 -> 5 and wrongly
+  // treated every app load as a level-up, popping the celebration modal
+  // unprompted.
+  //
+  // Fix: wait for `gameStats.loaded` (true only once a REAL Firestore
+  // snapshot has landed) before ever recording a baseline. The first real
+  // level seen for a signed-in uid is always just recorded, never
+  // compared — only a real increase seen WHILE the app stays open counts.
   const prevLevelRef = useRef(null);
+  const levelBaselineUidRef = useRef(null);
   const [justLeveledUp, setJustLeveledUp] = useState(false);
   useEffect(() => {
+    if (!user?.uid || !gameStats.loaded) return;
     const lvl = gameStats.level;
     if (lvl == null) return;
+
+    // Signed-in user changed (fresh login/logout/switch): reset the
+    // baseline so a different account's level isn't compared against a
+    // stale ref from the previous session.
+    if (levelBaselineUidRef.current !== user.uid) {
+      levelBaselineUidRef.current = user.uid;
+      prevLevelRef.current = lvl;
+      return;
+    }
+
     if (prevLevelRef.current != null && lvl > prevLevelRef.current) {
       setJustLeveledUp(true);
       setShowLevel(true);
     }
     prevLevelRef.current = lvl;
-  }, [gameStats.level]);
+  }, [gameStats.level, gameStats.loaded, user?.uid]);
 
   // Lifetime study seconds across all days (today included), used by
   // Settings' "Total study time" stat (dayKey excluded from the history sum
