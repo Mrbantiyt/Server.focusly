@@ -107,10 +107,16 @@ function LeaderboardBody({ rows, loading, myUid }) {
 }
 
 // Full-page panel — used inside Settings, matching "Your data" / "Weekly
-// Analytics" style (back arrow, same header, no overlay/backdrop).
+// Analytics" style (back arrow, same header, no overlay/backdrop). Plays
+// the same short intro animation as the Home trophy modal the moment this
+// section is opened (tap "Leaderboard" in Settings) — tap the animation to
+// skip it if you're in a hurry. This is the leaderboard's own animation
+// (gold trophy/rings/sparks), separate from the streak flame animation.
 export function LeaderboardPanel({ rows, loading, myUid, onBack }) {
+  const [showIntro, setShowIntro] = useState(true);
+
   return (
-    <div className="flex flex-col gap-5" style={{ height: "100%" }}>
+    <div className="flex flex-col gap-5 relative" style={{ height: "100%" }}>
       <div className="flex items-center gap-3 shrink-0">
         <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full flex-shrink-0" style={neu(false, 999)}>
           <ChevronLeft size={17} color={COL.ink} />
@@ -118,6 +124,7 @@ export function LeaderboardPanel({ rows, loading, myUid, onBack }) {
         <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>Leaderboard</div>
       </div>
       <LeaderboardBody rows={rows} loading={loading} myUid={myUid} />
+      {showIntro && <LeaderboardIntroAnimation onDone={() => setShowIntro(false)} />}
     </div>
   );
 }

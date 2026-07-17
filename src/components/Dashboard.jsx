@@ -15,6 +15,24 @@ function getGreeting() {
   return "Good night";
 }
 
+// Dashboard entry animation: purely CSS (no extra deps), driven by
+// `animation: ... both` with an increasing delay per section, so on every
+// mount (first login, or switching back to the Home tab) each block
+// settles in in order instead of the whole screen just appearing at once.
+// `both` means each block holds its "from" state (invisible/offset) until
+// its own delay elapses, so nothing flashes early.
+const DASHBOARD_ENTRY_STYLE = (
+  <style>{`
+    @keyframes dashEntryUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .dash-entry {
+      animation: dashEntryUp 420ms cubic-bezier(0.22,1,0.36,1) both;
+    }
+  `}</style>
+);
+
 export default function Dashboard({
   user, bankedSeconds, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank,
   timerRemaining, timerDuration, timerRunning, timerFinished, onTimerSetDuration, onTimerStart, onTimerPause, onTimerReset,
@@ -24,7 +42,9 @@ export default function Dashboard({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
+      {DASHBOARD_ENTRY_STYLE}
+
+      <div className="flex items-center justify-between dash-entry" style={{ animationDelay: "0ms" }}>
         <div className="flex items-center gap-3">
           {user.photoURL ? (
             <img src={user.photoURL} alt={name} className="w-11 h-11 rounded-2xl object-cover" />
@@ -53,27 +73,29 @@ export default function Dashboard({
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 dash-entry" style={{ animationDelay: "70ms" }}>
         <StatCard label="Time today" value={fmtHrs(bankedSeconds)} sub="synced to cloud" accent={COL.violet} />
         <StatCard label="Notes" value={`${notesCount}`} sub={notesCount === 1 ? "note saved" : "notes saved"} accent={COL.mint} />
       </div>
 
-      <TimerCard
-        remaining={timerRemaining}
-        durationSeconds={timerDuration}
-        running={timerRunning}
-        finished={timerFinished}
-        todaySeconds={bankedSeconds}
-        onSetDuration={onTimerSetDuration}
-        onStart={onTimerStart}
-        onPause={onTimerPause}
-        onReset={onTimerReset}
-      />
+      <div className="dash-entry" style={{ animationDelay: "140ms" }}>
+        <TimerCard
+          remaining={timerRemaining}
+          durationSeconds={timerDuration}
+          running={timerRunning}
+          finished={timerFinished}
+          todaySeconds={bankedSeconds}
+          onSetDuration={onTimerSetDuration}
+          onStart={onTimerStart}
+          onPause={onTimerPause}
+          onReset={onTimerReset}
+        />
+      </div>
 
       <button
         onClick={goChat}
-        style={neu(false, 20)}
-        className="p-4 flex items-center gap-3 active:scale-[0.98] transition text-left"
+        style={{ ...neu(false, 20), animationDelay: "210ms" }}
+        className="p-4 flex items-center gap-3 active:scale-[0.98] transition text-left dash-entry"
       >
         <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "rgba(123,110,246,0.15)" }}>
           <Sparkles size={16} color={COL.violet} />
@@ -85,7 +107,7 @@ export default function Dashboard({
       </button>
 
       {/* Weekly Analytics — shown directly on the home page */}
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3 dash-entry" style={{ animationDelay: "280ms" }}>
         <div className="font-display font-bold text-sm px-0.5" style={{ color: COL.ink }}>Weekly Analytics</div>
         <AnalyticsContent history={history} dayKey={dayKey} todaySeconds={bankedSeconds} tasks={tasks} myLeaderboardRank={myLeaderboardRank} />
       </div>
