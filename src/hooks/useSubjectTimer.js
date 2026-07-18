@@ -80,6 +80,13 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   // same subject reordering on the wire.
   const pendingSubjectSecondsRef = useRef({});
   const subjectFlushInFlightRef = useRef(false);
+  // Surfaces to the UI when a Firestore write for subject seconds keeps
+  // failing (e.g. permission-denied because the deployed security rules
+  // don't match this build, or the device is offline). Previously a failed
+  // flush only logged a console.warn and silently retried forever, so a
+  // user whose writes were being rejected would see "Today by Subject"
+  // never update, with zero on-screen indication anything was wrong.
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => { runningRef.current = running; }, [running]);
 
@@ -126,8 +133,20 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     subjectFlushInFlightRef.current = true;
     pendingSubjectSecondsRef.current = {};
     Promise.all(entries.map(([subject, sec]) => addSubjectSeconds(uid, dayKey, subject, sec)))
+      .then(() => {
+        // A write finally went through — clear any stale error banner.
+        setSaveError(null);
+      })
       .catch((err) => {
-        console.warn("[subjectTimer] Failed to save subject time, will retry:", err);
+        // Surfaced loudly now instead of just console.warn: a
+        // permission-denied here (deployed Firestore rules missing/older
+        // than the `subjectDays` match block) or a persistent offline
+        // state would otherwise fail forever with zero on-screen sign that
+        // "Today by Subject" is never going to update.
+        console.error("[subjectTimer] Failed to save subject time, will retry:", err?.code || err);
+        setSaveError(err?.code === "permission-denied"
+          ? "Couldn't save — permission denied. Your subject time isn't syncing."
+          : "Couldn't save subject time — check your connection.");
         // Put the failed amounts back so the next flush retries them.
         entries.forEach(([subject, sec]) => {
           pendingSubjectSecondsRef.current[subject] = (pendingSubjectSecondsRef.current[subject] || 0) + sec;
@@ -310,5 +329,6 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     reset,
     clearPlan,
     dayKey,
+    saveError, // non-null string if the last Firestore write attempt failed
   };
 }
