@@ -6,7 +6,6 @@ import { fmtHrs } from "../lib/time";
 import { StatCard } from "./StopwatchCard";
 import { TimerCard } from "./TimerCard";
 import { SubjectTimerCard } from "./SubjectTimerCard";
-import { TodaySubjects } from "./TodaySubjects";
 import { AnalyticsContent } from "./Settings";
 
 function getGreeting() {
@@ -38,7 +37,7 @@ const DASHBOARD_ENTRY_STYLE = (
 export default function Dashboard({
   user, bankedSeconds, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank,
   timerRemaining, timerDuration, timerRunning, timerFinished, onTimerSetDuration, onTimerStart, onTimerPause, onTimerReset,
-  subjectTimer, subjectSecondsToday,
+  subjectTimer,
 }) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
@@ -112,7 +111,6 @@ export default function Dashboard({
             onPause={subjectTimer.pause}
             onReset={subjectTimer.reset}
             onClearPlan={subjectTimer.clearPlan}
-            saveError={subjectTimer.saveError}
           />
         </div>
       )}
@@ -130,13 +128,6 @@ export default function Dashboard({
           <div className="font-body text-xs" style={{ color: COL.sub }}>Chat with NoteGPT</div>
         </div>
       </button>
-
-      {/* Today by Subject — only rendered once at least one subject has time logged today */}
-      {subjectSecondsToday && Object.keys(subjectSecondsToday).length > 0 && (
-        <div className="dash-entry" style={{ animationDelay: "245ms" }}>
-          <TodaySubjects subjectSeconds={subjectSecondsToday} />
-        </div>
-      )}
 
       {/* Weekly Analytics — shown directly on the home page */}
       <div className="flex flex-col gap-3 dash-entry" style={{ animationDelay: "280ms" }}>
