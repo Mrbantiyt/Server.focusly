@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dayKeyFor } from "../lib/time";
 import { playTimerCompleteChime } from "../lib/sound";
-import { addSubjectSeconds } from "../lib/firestore";
+import { addSubjectSeconds, addSubjectSecondsForDay } from "../lib/firestore";
 
 // ---------------------------------------------------------------------------
 // CUSTOM (MULTI-SUBJECT) TIMER
@@ -71,20 +71,28 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const chimeTimeoutRef = useRef(null);
   const chimeIntervalRef = useRef(null);
 
-  // Per-subject seconds accumulated locally since the last Firestore flush
-  // (e.g. { Mathematics: 37, Physics: 12 }) — feeds addSubjectSeconds on a
-  // short interval instead of writing on every single tick, and also gets
-  // flushed immediately on pause/reset/clear/unmount so a quick pause never
-  // silently drops a partial window of progress.
+  // Per-subject seconds accumulated locally since the last Firestore flush,
+  // bucketed by day so a session that happens to cross midnight still
+  // credits each day's own subjectDays doc correctly:
+  //   { "2026-07-18": { Mathematics: 37, Physics: 12 }, ... }
+  // Feeds addSubjectSeconds (lifetime total) AND addSubjectSecondsForDay
+  // (this-week breakdown) on a short interval instead of writing on every
+  // single tick, and also gets flushed immediately on pause/reset/clear/
+  // unmount so a quick pause never silently drops a partial window.
   const pendingSubjectSecondsRef = useRef({});
   const FLUSH_MS = 8000;
 
   const flushPendingSubjectSeconds = () => {
     if (!uid) { pendingSubjectSecondsRef.current = {}; return; }
-    const entries = Object.entries(pendingSubjectSecondsRef.current);
+    const byDay = pendingSubjectSecondsRef.current;
     pendingSubjectSecondsRef.current = {};
-    entries.forEach(([name, secs]) => {
-      if (secs > 0) addSubjectSeconds(uid, name, secs).catch(() => {});
+    Object.entries(byDay).forEach(([day, bySubject]) => {
+      Object.entries(bySubject).forEach(([name, secs]) => {
+        if (secs > 0) {
+          addSubjectSeconds(uid, name, secs).catch(() => {});
+          addSubjectSecondsForDay(uid, day, name, secs).catch(() => {});
+        }
+      });
     });
   };
 
@@ -219,7 +227,8 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       // Stats tab's "Time by Subject" breakdown and subject achievements.
       const activeName = planRef.current[activeIndexRef.current]?.name;
       if (activeName) {
-        pendingSubjectSecondsRef.current[activeName] = (pendingSubjectSecondsRef.current[activeName] || 0) + 1;
+        const dayBucket = pendingSubjectSecondsRef.current[key] || (pendingSubjectSecondsRef.current[key] = {});
+        dayBucket[activeName] = (dayBucket[activeName] || 0) + 1;
       }
 
       if (remainingRef.current <= 0) {
