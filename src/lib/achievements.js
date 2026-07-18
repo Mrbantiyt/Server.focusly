@@ -191,39 +191,6 @@ export const ACHIEVEMENTS = [
     target: 50000,
     reward: 0, // reward paid in coins would be circular for a coins-target badge
   },
-  {
-    id: "subject_math_10h",
-    name: "Study Mathematics 10 Hours",
-    description: "Reach 10 hours studying Mathematics.",
-    icon: "BookOpen",
-    category: ACHIEVEMENT_CATEGORY.SUBJECT,
-    metric: "subjectSeconds",
-    subject: "Mathematics",
-    target: 10 * 3600,
-    reward: 1200,
-  },
-  {
-    id: "subject_hindi_10h",
-    name: "Study Hindi 10 Hours",
-    description: "Reach 10 hours studying Hindi.",
-    icon: "BookOpen",
-    category: ACHIEVEMENT_CATEGORY.SUBJECT,
-    metric: "subjectSeconds",
-    subject: "Hindi",
-    target: 10 * 3600,
-    reward: 1200,
-  },
-  {
-    id: "subject_science_10h",
-    name: "Study Science 10 Hours",
-    description: "Reach 10 hours studying Science.",
-    icon: "BookOpen",
-    category: ACHIEVEMENT_CATEGORY.SUBJECT,
-    metric: "subjectSeconds",
-    subject: "Science",
-    target: 10 * 3600,
-    reward: 1200,
-  },
 ];
 
 // Reads whatever raw value an achievement's metric points to out of a

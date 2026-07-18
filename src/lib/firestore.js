@@ -64,6 +64,31 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
   });
 }
 
+/* ------------------------- subject timer (per-day, per-subject) ---------------- */
+
+// One doc per user per study-day: users/{uid}/subjectDays/{dayKey} =
+// { seconds: { [subjectName]: seconds, ... } }
+// Tracks how long each subject was studied TODAY only, via the Custom
+// (multi-subject) Timer. Intentionally day-scoped only (no lifetime total,
+// no achievements hang off this) — the dashboard's "Today by Subject" list
+// is the only consumer, and it resets naturally every day because it reads
+// a fresh dayKey doc.
+export async function addSubjectSeconds(uid, dayKey, subject, deltaSeconds) {
+  if (!subject || deltaSeconds <= 0) return;
+  const ref = doc(db, "users", uid, "subjectDays", dayKey);
+  await setDoc(
+    ref,
+    { seconds: { [subject]: increment(deltaSeconds) }, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+}
+
+// Live-listen to today's per-subject seconds map.
+export function watchSubjectDay(uid, dayKey, cb) {
+  const ref = doc(db, "users", uid, "subjectDays", dayKey);
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data().seconds || {} : {}));
+}
+
 /* ---------------------------------- tasks -------------------------------------- */
 
 // users/{uid}/tasks/{taskId} = {
