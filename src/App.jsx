@@ -6,6 +6,7 @@ import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useSubjectTimer } from "./hooks/useSubjectTimer";
 import { useStudyHistory } from "./hooks/useStudyHistory";
+import { useSubjectHistory } from "./hooks/useSubjectHistory";
 import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
 import { useAchievements } from "./hooks/useAchievements";
@@ -70,6 +71,7 @@ export default function App() {
   // ("Today by Subject" was removed).
   const subjectTimer = useSubjectTimer(user?.uid, { onElapsedSecond: creditExternalSeconds });
   const history = useStudyHistory(user?.uid, 31);
+  const subjectHistory = useSubjectHistory(user?.uid, 31);
   // Tasks tab was removed and replaced by Notes. `tasks` is kept as a
   // stable empty array (not lifted from a hook anymore) purely so the
   // existing Dashboard/Settings stat panels — which still read a `tasks`
@@ -360,7 +362,7 @@ export default function App() {
                     history={history}
                     todayKey={dayKey}
                     todaySeconds={todaySeconds}
-                    subjectSeconds={gameStats.subjectSeconds}
+                    subjectHistory={subjectHistory}
                   />
                 </div>
               )}
