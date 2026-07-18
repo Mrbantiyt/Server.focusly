@@ -4,13 +4,14 @@ import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon
 import { COL, neu } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
+import { useSubjectTimer } from "./hooks/useSubjectTimer";
 import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
 import { useAchievements } from "./hooks/useAchievements";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
-import { watchUserProfile, watchAppUpdateConfig, incrementSessionsCompleted } from "./lib/firestore";
+import { watchUserProfile, watchAppUpdateConfig, incrementSessionsCompleted, watchSubjectDay } from "./lib/firestore";
 import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -59,7 +60,22 @@ export default function App() {
   const {
     remaining: timerRemaining, durationSeconds: timerDuration, running, finished: timerFinished,
     todaySeconds, setDuration: setTimerDuration, start: startTimer, pause: pauseTimer, reset: resetTimer, dayKey,
+    creditExternalSeconds,
   } = useCountdownTimer(user?.uid);
+  // Custom (multi-subject) Timer — each elapsed second is credited to BOTH
+  // its own subject's daily total (inside the hook, via addSubjectSeconds)
+  // AND the Study Timer's overall "Time today" bank (via
+  // creditExternalSeconds here), per spec: total time should reflect all
+  // studying, however it was timed.
+  const subjectTimer = useSubjectTimer(user?.uid, { onElapsedSecond: creditExternalSeconds });
+  // Today's per-subject totals, live-synced from Firestore so the
+  // dashboard's "Today by Subject" list stays accurate across
+  // tabs/devices too (not just the locally-running timer's own state).
+  const [subjectSecondsToday, setSubjectSecondsToday] = useState({});
+  useEffect(() => {
+    if (!user?.uid) { setSubjectSecondsToday({}); return; }
+    return watchSubjectDay(user.uid, dayKey, setSubjectSecondsToday);
+  }, [user?.uid, dayKey]);
   const history = useStudyHistory(user?.uid, 31);
   // Tasks tab was removed and replaced by Notes. `tasks` is kept as a
   // stable empty array (not lifted from a hook anymore) purely so the
@@ -162,6 +178,23 @@ export default function App() {
       sessionCreditedRef.current = false;
     }
   }, [timerFinished, user?.uid]);
+
+  // Same one-time credit, but for the Custom (multi-subject) Timer
+  // finishing its whole plan — a completed subject-timer run counts as a
+  // completed session too, same as the Study Timer.
+  const subjectSessionCreditedRef = useRef(false);
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (subjectTimer.finished && !subjectSessionCreditedRef.current) {
+      subjectSessionCreditedRef.current = true;
+      incrementSessionsCompleted(user.uid).catch((err) => {
+        console.warn("[achievements] Failed to credit subject-timer session:", err);
+      });
+    }
+    if (!subjectTimer.finished) {
+      subjectSessionCreditedRef.current = false;
+    }
+  }, [subjectTimer.finished, user?.uid]);
 
   // Study seconds since THIS week's Monday (today included) — what the
   // leaderboard now ranks on, so it naturally resets every Monday.
@@ -306,6 +339,7 @@ export default function App() {
                 <Dashboard user={profile} bankedSeconds={todaySeconds}
                   timerRemaining={timerRemaining} timerDuration={timerDuration} timerRunning={running} timerFinished={timerFinished}
                   onTimerSetDuration={setTimerDuration} onTimerStart={startTimer} onTimerPause={pauseTimer} onTimerReset={resetTimer}
+                  subjectTimer={subjectTimer} subjectSecondsToday={subjectSecondsToday}
                   tasks={tasks} notesCount={notes.length} goChat={() => setTab("chat")} onLogout={logout} history={history} dayKey={dayKey}
                   unreadCount={unreadCount} myLeaderboardRank={myLeaderboardRank}
                   onOpenNotifications={() => {
