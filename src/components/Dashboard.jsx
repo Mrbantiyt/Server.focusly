@@ -112,6 +112,7 @@ export default function Dashboard({
             onPause={subjectTimer.pause}
             onReset={subjectTimer.reset}
             onClearPlan={subjectTimer.clearPlan}
+            saveError={subjectTimer.saveError}
           />
         </div>
       )}

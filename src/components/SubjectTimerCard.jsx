@@ -23,6 +23,7 @@ export function SubjectTimerCard({
   plan, activeIndex, activeSubject, remaining, running, finished, chiming,
   totalPlanSeconds, elapsedPlanSeconds,
   onSetPlan, onStart, onPause, onReset, onClearPlan,
+  saveError,
 }) {
   const [open, setOpen] = useState(plan.length > 0);
   const [draftName, setDraftName] = useState("");
@@ -93,6 +94,15 @@ export function SubjectTimerCard({
       <span className="font-body text-xs mb-4" style={{ color: COL.sub }}>
         Add your own subjects, each with its own time — they'll run one after another.
       </span>
+
+      {saveError && (
+        <div
+          className="mb-4 px-3 py-2 rounded-xl font-body text-xs"
+          style={{ background: "rgba(255,90,90,0.12)", color: COL.coral, border: `1px solid rgba(255,90,90,0.3)` }}
+        >
+          ⚠️ {saveError} It'll keep retrying — check your internet, or that you're still signed in.
+        </div>
+      )}
 
       {/* Collapsed state: nothing built yet */}
       {!open && !hasPlan && (
