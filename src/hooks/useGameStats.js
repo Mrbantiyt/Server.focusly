@@ -73,7 +73,10 @@ function persistRewardState(uid, state) {
 // passed through so the LOCAL tick/minute rate used for on-screen feedback
 // matches the plan; the actual payout is still decided server-side.
 export function useGameStats(uid, running, billing) {
-  const [stats, setStats] = useState({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });
+  const [stats, setStats] = useState({
+    xp: 0, coins: 0, streak: 0, streakDays: {}, lastStreakDay: null, ownedItems: [], activeMascot: "default",
+    sessionsCompleted: 0, lifetimeCoinsEarned: 0, subjectSeconds: {}, unlockedAchievements: [],
+  });
   // True only once watchGameStats' onSnapshot callback has actually fired
   // for the current uid — lets consumers (e.g. App.jsx's level-up
   // detector) tell "this is the local default state, before Firestore has
@@ -87,7 +90,10 @@ export function useGameStats(uid, running, billing) {
   // live sync from Firestore
   useEffect(() => {
     if (!uid) {
-      setStats({ xp: 0, coins: 0, streak: 0, streakDays: {}, ownedItems: [], activeMascot: "default" });
+      setStats({
+        xp: 0, coins: 0, streak: 0, streakDays: {}, lastStreakDay: null, ownedItems: [], activeMascot: "default",
+        sessionsCompleted: 0, lifetimeCoinsEarned: 0, subjectSeconds: {}, unlockedAchievements: [],
+      });
       setLoaded(false);
       return;
     }
@@ -198,8 +204,13 @@ export function useGameStats(uid, running, billing) {
     coins: stats.coins,
     streak: stats.streak,
     streakDays: stats.streakDays,
+    lastStreakDay: stats.lastStreakDay,
     ownedItems: stats.ownedItems,
     activeMascot: stats.activeMascot,
+    sessionsCompleted: stats.sessionsCompleted,
+    lifetimeCoinsEarned: stats.lifetimeCoinsEarned,
+    subjectSeconds: stats.subjectSeconds,
+    unlockedAchievements: stats.unlockedAchievements,
     level,
     xpIntoLevel,
     xpForNextLevel,
