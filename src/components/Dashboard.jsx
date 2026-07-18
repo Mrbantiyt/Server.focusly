@@ -5,6 +5,8 @@ import { COL, neu } from "../theme";
 import { fmtHrs } from "../lib/time";
 import { StatCard } from "./StopwatchCard";
 import { TimerCard } from "./TimerCard";
+import { SubjectTimerCard } from "./SubjectTimerCard";
+import { TodaySubjects } from "./TodaySubjects";
 import { AnalyticsContent } from "./Settings";
 
 function getGreeting() {
@@ -36,6 +38,7 @@ const DASHBOARD_ENTRY_STYLE = (
 export default function Dashboard({
   user, bankedSeconds, tasks, notesCount = 0, goChat, onLogout, history, dayKey, unreadCount, onOpenNotifications, myLeaderboardRank,
   timerRemaining, timerDuration, timerRunning, timerFinished, onTimerSetDuration, onTimerStart, onTimerPause, onTimerReset,
+  subjectTimer, subjectSecondsToday,
 }) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
@@ -92,6 +95,27 @@ export default function Dashboard({
         />
       </div>
 
+      {subjectTimer && (
+        <div className="dash-entry" style={{ animationDelay: "175ms" }}>
+          <SubjectTimerCard
+            plan={subjectTimer.plan}
+            activeIndex={subjectTimer.activeIndex}
+            activeSubject={subjectTimer.activeSubject}
+            remaining={subjectTimer.remaining}
+            running={subjectTimer.running}
+            finished={subjectTimer.finished}
+            chiming={subjectTimer.chiming}
+            totalPlanSeconds={subjectTimer.totalPlanSeconds}
+            elapsedPlanSeconds={subjectTimer.elapsedPlanSeconds}
+            onSetPlan={subjectTimer.setSubjectPlan}
+            onStart={subjectTimer.start}
+            onPause={subjectTimer.pause}
+            onReset={subjectTimer.reset}
+            onClearPlan={subjectTimer.clearPlan}
+          />
+        </div>
+      )}
+
       <button
         onClick={goChat}
         style={{ ...neu(false, 20), animationDelay: "210ms" }}
@@ -105,6 +129,13 @@ export default function Dashboard({
           <div className="font-body text-xs" style={{ color: COL.sub }}>Chat with NoteGPT</div>
         </div>
       </button>
+
+      {/* Today by Subject — only rendered once at least one subject has time logged today */}
+      {subjectSecondsToday && Object.keys(subjectSecondsToday).length > 0 && (
+        <div className="dash-entry" style={{ animationDelay: "245ms" }}>
+          <TodaySubjects subjectSeconds={subjectSecondsToday} />
+        </div>
+      )}
 
       {/* Weekly Analytics — shown directly on the home page */}
       <div className="flex flex-col gap-3 dash-entry" style={{ animationDelay: "280ms" }}>
