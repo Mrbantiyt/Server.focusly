@@ -22,6 +22,7 @@ import AskAiExternal from "./components/AskAiExternal";
 import Notes from "./components/Notes";
 import CalendarView from "./components/CalendarView";
 import GraphView from "./components/GraphView";
+import SubjectStatsView from "./components/SubjectStatsView";
 import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
 import UpdateBanner from "./components/UpdateBanner";
@@ -355,6 +356,12 @@ export default function App() {
                 <div className="flex flex-col gap-6">
                   <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
                   <GraphView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
+                  <SubjectStatsView
+                    history={history}
+                    todayKey={dayKey}
+                    todaySeconds={todaySeconds}
+                    subjectSeconds={gameStats.subjectSeconds}
+                  />
                 </div>
               )}
               {tab === "settings" && (
