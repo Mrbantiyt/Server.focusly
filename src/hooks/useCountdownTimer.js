@@ -303,6 +303,22 @@ export function useCountdownTimer(uid) {
     persistNow();
   };
 
+  // Credits seconds from an OTHER running clock (the Custom/Subject Timer)
+  // into this same "Time today" bank, so total daily study time reflects
+  // both timers combined. Reuses the same bankSeconds/flush machinery — it
+  // does not touch remaining/durationSeconds/running, which belong solely
+  // to the Study Timer's own countdown.
+  const creditExternalSeconds = (sec) => {
+    bankSeconds(sec);
+    persistState(uid, {
+      dayKey,
+      running: runningRef.current,
+      durationSeconds,
+      remaining: remainingRef.current,
+      bankedToday: bankedTodayRef.current,
+    });
+  };
+
   return {
     remaining,          // seconds left on the countdown
     durationSeconds,     // the currently-set total duration in seconds
@@ -315,5 +331,6 @@ export function useCountdownTimer(uid) {
     toggle,
     reset,
     dayKey,
+    creditExternalSeconds,
   };
 }
