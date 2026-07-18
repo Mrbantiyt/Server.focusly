@@ -349,6 +349,36 @@ export async function incrementSessionsCompleted(uid) {
   await setDoc(ref, { sessionsCompleted: increment(1) }, { merge: true });
 }
 
+// Credits `deltaSeconds` of newly-elapsed study time to a single subject's
+// running lifetime total, e.g. subjectSeconds.Mathematics += deltaSeconds.
+// This is the writer for the `subjectSeconds` map that watchGameStats reads
+// (see above) and that the achievement engine and the Stats tab's "Time by
+// Subject" donut both depend on — the Subject Timer hook calls this on a
+// short flush interval (see useSubjectTimer.js) rather than on every single
+// second, to keep write volume reasonable.
+//
+// Wrapped in a transaction (same reasoning as addXp/addFocusRewards): reads
+// the current map, only touches the one key being credited, and merges the
+// result back — so two near-simultaneous flushes (e.g. a fast subject
+// switch right as the interval fires) can't clobber each other's delta.
+// Subject names are used as map keys as-is; Firestore field-path dot
+// notation isn't used here specifically so subject names containing "."
+// don't get misread as nested paths.
+export async function addSubjectSeconds(uid, subjectName, deltaSeconds) {
+  const delta = Math.max(0, Math.floor(deltaSeconds) || 0);
+  const name = (subjectName || "").trim();
+  if (!uid || !name || delta <= 0) return;
+
+  const ref = doc(db, "users", uid);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const prevMap = d.subjectSeconds || {};
+    const prevVal = prevMap[name] || 0;
+    tx.set(ref, { subjectSeconds: { ...prevMap, [name]: prevVal + delta } }, { merge: true });
+  });
+}
+
 // Unlocks one or more achievements at once and credits their combined coin
 // reward, in a single transaction — so a batch of simultaneous unlocks
 // (e.g. crossing both "Study 1 Hour" and "Complete 10 Sessions" in the same
