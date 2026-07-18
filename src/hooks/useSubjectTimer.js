@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { dayKeyFor } from "../lib/time";
 import { playTimerCompleteChime } from "../lib/sound";
+import { addSubjectSeconds } from "../lib/firestore";
 
 // ---------------------------------------------------------------------------
 // CUSTOM (MULTI-SUBJECT) TIMER
@@ -70,6 +71,23 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const chimeTimeoutRef = useRef(null);
   const chimeIntervalRef = useRef(null);
 
+  // Per-subject seconds accumulated locally since the last Firestore flush
+  // (e.g. { Mathematics: 37, Physics: 12 }) — feeds addSubjectSeconds on a
+  // short interval instead of writing on every single tick, and also gets
+  // flushed immediately on pause/reset/clear/unmount so a quick pause never
+  // silently drops a partial window of progress.
+  const pendingSubjectSecondsRef = useRef({});
+  const FLUSH_MS = 8000;
+
+  const flushPendingSubjectSeconds = () => {
+    if (!uid) { pendingSubjectSecondsRef.current = {}; return; }
+    const entries = Object.entries(pendingSubjectSecondsRef.current);
+    pendingSubjectSecondsRef.current = {};
+    entries.forEach(([name, secs]) => {
+      if (secs > 0) addSubjectSeconds(uid, name, secs).catch(() => {});
+    });
+  };
+
   useEffect(() => { runningRef.current = running; }, [running]);
 
   const persistNow = () => {
@@ -100,6 +118,14 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   };
 
   useEffect(() => stopChime, []); // clear any pending chime timers on unmount
+
+  // Periodic + on-unmount flush of accumulated per-subject seconds to
+  // Firestore (see pendingSubjectSecondsRef above).
+  useEffect(() => {
+    const id = setInterval(flushPendingSubjectSeconds, FLUSH_MS);
+    return () => { clearInterval(id); flushPendingSubjectSeconds(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
 
   // Sets a brand-new plan (only while stopped) — replaces whatever was
   // there before, always starting at subject 0.
@@ -133,6 +159,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     runningRef.current = false;
     setRunning(false);
     persistNow();
+    flushPendingSubjectSeconds();
   };
 
   const toggle = () => (runningRef.current ? pause() : start());
@@ -149,6 +176,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     stopChime();
     persistNow();
+    flushPendingSubjectSeconds();
   };
 
   // Clears the plan entirely (e.g. user closes the Custom Timer card).
@@ -164,6 +192,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     stopChime();
     persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false });
+    flushPendingSubjectSeconds();
   };
 
   // The 1-second countdown tick.
@@ -185,6 +214,14 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       // flush for that total.
       onElapsedSecond?.(1);
 
+      // Also credits this second to the active subject's running total
+      // (flushed to Firestore on FLUSH_MS interval below), which feeds the
+      // Stats tab's "Time by Subject" breakdown and subject achievements.
+      const activeName = planRef.current[activeIndexRef.current]?.name;
+      if (activeName) {
+        pendingSubjectSecondsRef.current[activeName] = (pendingSubjectSecondsRef.current[activeName] || 0) + 1;
+      }
+
       if (remainingRef.current <= 0) {
         const isLastSubject = activeIndexRef.current >= planRef.current.length - 1;
         if (isLastSubject) {
@@ -193,6 +230,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
           setRunning(false);
           setFinished(true);
           playFiveSecondChime();
+          flushPendingSubjectSeconds();
         } else {
           // Auto-continue straight into the next subject.
           playFiveSecondChime();
