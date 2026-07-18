@@ -71,6 +71,16 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const chimeTimeoutRef = useRef(null);
   const chimeIntervalRef = useRef(null);
 
+  // Pending per-subject seconds not yet flushed to Firestore, keyed by
+  // subject name. Same throttled-batch approach as useCountdownTimer's
+  // bankSeconds/flushToFirestore: seconds accrue here on every tick (so the
+  // on-screen numbers are never behind), and are written to Firestore in a
+  // single batched addSubjectSeconds call every 2s instead of once per
+  // second — far fewer writes, and no risk of two per-second writes for the
+  // same subject reordering on the wire.
+  const pendingSubjectSecondsRef = useRef({});
+  const subjectFlushInFlightRef = useRef(false);
+
   useEffect(() => { runningRef.current = running; }, [running]);
 
   const persistNow = () => {
@@ -101,6 +111,53 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   };
 
   useEffect(() => stopChime, []); // clear any pending chime timers on unmount
+
+  // Flushes whatever's accrued in pendingSubjectSecondsRef to Firestore, one
+  // addSubjectSeconds call per subject that has pending seconds, then clears
+  // the pending map. Guarded against overlapping flushes the same way
+  // useCountdownTimer's flushToFirestore is — never start a new flush while
+  // a previous one is still in flight, so writes for the same subject/day
+  // can't race and reorder on the wire.
+  const flushSubjectSeconds = () => {
+    if (!uid || subjectFlushInFlightRef.current) return;
+    const pending = pendingSubjectSecondsRef.current;
+    const entries = Object.entries(pending).filter(([, sec]) => sec > 0);
+    if (!entries.length) return;
+    subjectFlushInFlightRef.current = true;
+    pendingSubjectSecondsRef.current = {};
+    Promise.all(entries.map(([subject, sec]) => addSubjectSeconds(uid, dayKey, subject, sec)))
+      .catch((err) => {
+        console.warn("[subjectTimer] Failed to save subject time, will retry:", err);
+        // Put the failed amounts back so the next flush retries them.
+        entries.forEach(([subject, sec]) => {
+          pendingSubjectSecondsRef.current[subject] = (pendingSubjectSecondsRef.current[subject] || 0) + sec;
+        });
+      })
+      .finally(() => {
+        subjectFlushInFlightRef.current = false;
+      });
+  };
+
+  // Periodic throttled save (every 2s), same cadence as the Study Timer's
+  // own "Time today" flush.
+  useEffect(() => {
+    const id = setInterval(flushSubjectSeconds, 2000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, dayKey]);
+
+  // Flush on tab hide / app backgrounding / unload, so nothing meaningful
+  // is lost if the app closes between periodic flushes.
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "hidden") flushSubjectSeconds(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flushSubjectSeconds);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flushSubjectSeconds);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid, dayKey]);
 
   // Sets a brand-new plan (only while stopped) — replaces whatever was
   // there before, always starting at subject 0.
@@ -133,6 +190,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const pause = () => {
     runningRef.current = false;
     setRunning(false);
+    flushSubjectSeconds();
     persistNow();
   };
 
@@ -157,6 +215,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const clearPlan = () => {
     runningRef.current = false;
     setRunning(false);
+    flushSubjectSeconds();
     planRef.current = [];
     setPlan([]);
     activeIndexRef.current = 0;
@@ -181,13 +240,15 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       remainingRef.current -= 1;
       setRemaining(remainingRef.current);
 
-      // Credit this elapsed second to the ACTIVE subject's daily total,
-      // and (per spec) to the overall "Time today" total too.
+      // Credit this elapsed second to the ACTIVE subject's PENDING total —
+      // written to Firestore in a batch every 2s (see flushSubjectSeconds)
+      // rather than on every single tick — and (per spec) to the overall
+      // "Time today" total too, immediately, since that side already has
+      // its own throttled flush inside useCountdownTimer.
       const activeSubject = planRef.current[activeIndexRef.current];
-      if (activeSubject && uid) {
-        addSubjectSeconds(uid, key, activeSubject.name, 1).catch((err) => {
-          console.warn("[subjectTimer] Failed to credit subject second:", err);
-        });
+      if (activeSubject) {
+        pendingSubjectSecondsRef.current[activeSubject.name] =
+          (pendingSubjectSecondsRef.current[activeSubject.name] || 0) + 1;
       }
       onElapsedSecond?.(1);
 
@@ -198,9 +259,13 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
           runningRef.current = false;
           setRunning(false);
           setFinished(true);
+          flushSubjectSeconds();
           playFiveSecondChime();
         } else {
-          // Auto-continue straight into the next subject.
+          // Auto-continue straight into the next subject. Flush now so the
+          // just-finished subject's total is accurate the moment its badge
+          // shows a checkmark, rather than waiting for the next 2s tick.
+          flushSubjectSeconds();
           playFiveSecondChime();
           activeIndexRef.current += 1;
           setActiveIndex(activeIndexRef.current);
