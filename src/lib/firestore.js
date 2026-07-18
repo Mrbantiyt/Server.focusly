@@ -308,7 +308,85 @@ export function watchGameStats(uid, cb) {
         totalCompleted: d.taskStats?.totalCompleted || 0,
         lastResetDay: d.taskStats?.lastResetDay || null,
       },
+      // Lifetime count of fully-completed Study Timer countdowns (see
+      // incrementSessionsCompleted below) — feeds the "Complete N Sessions"
+      // achievements and the Subject Analytics "Total sessions" stat.
+      sessionsCompleted: d.sessionsCompleted || 0,
+      // Monotonic running total of all coins ever earned (level-ups, focus
+      // rewards, achievement payouts) — deliberately NEVER decremented by
+      // spends (Store purchases, streak restore), so the "Collect 50,000
+      // Coins" achievement can't be un-earned by spending and isn't
+      // gameable by buying-then-not-really-having-collected it.
+      lifetimeCoinsEarned: d.lifetimeCoinsEarned || 0,
+      // Per-subject cumulative study seconds, e.g. { Mathematics: 1234 }.
+      // Currently only written by the Subject Timer feature; kept here too
+      // (not just in a subcollection) so achievement progress checks
+      // ("Study Mathematics 10 Hours") can read it from the same live
+      // gameStats snapshot everything else already uses.
+      subjectSeconds: d.subjectSeconds || {},
+      // IDs of achievements already unlocked, so the badge grid and the
+      // unlock-detector both know what's already been awarded and never
+      // re-credit or re-animate the same badge twice.
+      unlockedAchievements: d.unlockedAchievements || [],
     });
+  });
+}
+
+// Call once each time the Study Timer countdown reaches 0 naturally (i.e.
+// `finished` flips true) — increments the lifetime "sessions completed"
+// counter used by the Complete-N-Sessions achievements and Subject
+// Analytics. Deliberately NOT tied to Start/Pause/Reset — only a countdown
+// that actually ran out counts as a completed session, matching what the
+// achievement copy ("Complete 10 Sessions") implies.
+//
+// Idempotency: the caller (App.jsx) is responsible for calling this only
+// once per finish transition (edge-triggered on `finished` going false ->
+// true), not on every render while `finished` stays true — see the
+// sessionCreditedRef guard where it's called from.
+export async function incrementSessionsCompleted(uid) {
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, { sessionsCompleted: increment(1) }, { merge: true });
+}
+
+// Unlocks one or more achievements at once and credits their combined coin
+// reward, in a single transaction — so a batch of simultaneous unlocks
+// (e.g. crossing both "Study 1 Hour" and "Complete 10 Sessions" in the same
+// tick) can't race with itself or with another coin-changing action
+// (purchase, restore, level-up) the way two separate un-transacted writes
+// could.
+//
+// Re-checks `owned.includes(id)` per-id inside the transaction (not just
+// trusting the caller's `ids` list) so a duplicate/late-arriving call after
+// the achievement was already unlocked elsewhere is a safe no-op for that
+// id rather than double-paying its reward.
+export async function unlockAchievements(uid, idsWithRewards) {
+  if (!idsWithRewards.length) return { ok: true, newlyUnlocked: [], coinsAwarded: 0 };
+  const ref = doc(db, "users", uid);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const owned = new Set(d.unlockedAchievements || []);
+    const coins = d.coins || 0;
+
+    const newlyUnlocked = [];
+    let coinsAwarded = 0;
+    for (const { id, reward } of idsWithRewards) {
+      if (owned.has(id)) continue;
+      owned.add(id);
+      newlyUnlocked.push(id);
+      coinsAwarded += reward || 0;
+    }
+
+    if (newlyUnlocked.length === 0) return { ok: true, newlyUnlocked: [], coinsAwarded: 0 };
+
+    tx.set(ref, {
+      unlockedAchievements: Array.from(owned),
+      coins: coins + coinsAwarded,
+      lifetimeCoinsEarned: (d.lifetimeCoinsEarned || 0) + coinsAwarded,
+    }, { merge: true });
+
+    return { ok: true, newlyUnlocked, coinsAwarded };
   });
 }
 
@@ -337,8 +415,9 @@ export async function addXp(uid, amount) {
       coinsEarned += lvl * 1000;
     }
     const newCoins = prevCoins + coinsEarned;
+    const newLifetimeCoins = (d.lifetimeCoinsEarned || 0) + coinsEarned;
 
-    tx.set(ref, { xp: newXp, coins: newCoins }, { merge: true });
+    tx.set(ref, { xp: newXp, coins: newCoins, lifetimeCoinsEarned: newLifetimeCoins }, { merge: true });
     return { xp: newXp, coins: newCoins, level: newLevel, levelsGained };
   });
 
@@ -399,8 +478,9 @@ export async function addFocusRewards(uid, newXpTicks, newCoinMinutes) {
     }
 
     const newCoins = prevCoins + focusCoinsAwarded + levelUpCoins;
+    const newLifetimeCoins = (d.lifetimeCoinsEarned || 0) + focusCoinsAwarded + levelUpCoins;
 
-    tx.set(ref, { xp: newXp, coins: newCoins }, { merge: true });
+    tx.set(ref, { xp: newXp, coins: newCoins, lifetimeCoinsEarned: newLifetimeCoins }, { merge: true });
 
     return {
       xp: newXp,
@@ -432,6 +512,79 @@ export async function registerDailyLogin(uid, todayKey, yesterdayKey) {
     const streakDays = { ...(d.streakDays || {}), [todayKey]: true };
 
     tx.set(ref, { streak: newStreak, lastStreakDay: todayKey, streakDays }, { merge: true });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// STREAK RESTORE
+// ---------------------------------------------------------------------------
+// Eligibility check — pure function, no reads/writes, safe to call from the
+// UI on every render to decide whether to show the "Restore Streak" button.
+//
+// A streak is restorable only if EXACTLY one day was missed:
+//   - lastStreakDay is two calendar days before today (yesterday was skipped,
+//     the day before that was the last login) — restoring brings the streak
+//     back to life as if yesterday had been logged in after all.
+//   - If lastStreakDay is null (never logged in) there's nothing to restore.
+//   - If more than one day was missed (lastStreakDay is 3+ days back),
+//     restore is intentionally NOT offered — matches "only the most recently
+//     missed day" from the spec.
+//   - If lastStreakDay is today or yesterday, the streak isn't broken at
+//     all, so there's nothing to restore.
+export function isStreakRestoreEligible({ lastStreakDay, todayKey, yesterdayKey, dayBeforeYesterdayKey }) {
+  if (!lastStreakDay) return false;
+  return lastStreakDay === dayBeforeYesterdayKey && lastStreakDay !== todayKey && lastStreakDay !== yesterdayKey;
+}
+
+// Spends `cost` coins to restore a just-broken streak. Transaction-wrapped
+// for the same double-tap/multi-tab safety reason as purchaseItem/addXp.
+//
+// Re-validates eligibility server-side (inside the transaction, from fresh
+// data) rather than trusting the client's `eligible` check — the client-side
+// isStreakRestoreEligible() above is only for deciding whether to SHOW the
+// button; this is the actual gate on whether the spend+restore is allowed to
+// happen at all, so a stale UI state can't restore something that's no
+// longer eligible (e.g. two rapid taps, or time passing between render and
+// click that pushes lastStreakDay further into the past).
+//
+// On success: streakDays gets yesterday marked active (so the calendar view
+// reflects the restored day), and lastStreakDay is set to yesterdayKey — NOT
+// todayKey — so today's own registerDailyLogin() call still runs its normal
+// "continuing" check and bumps the streak by 1 for today on top of the
+// restored value, exactly as if yesterday had been a normal login.
+// restoresUsed is tracked for potential future limits/analytics; it does not
+// currently gate anything.
+export async function restoreStreak(uid, { todayKey, yesterdayKey, dayBeforeYesterdayKey, cost = 10000 }) {
+  const ref = doc(db, "users", uid);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+
+    const lastDay = d.lastStreakDay || null;
+    const eligible = isStreakRestoreEligible({ lastStreakDay: lastDay, todayKey, yesterdayKey, dayBeforeYesterdayKey });
+    if (!eligible) return { ok: false, reason: "not-eligible" };
+
+    const coins = d.coins || 0;
+    if (coins < cost) return { ok: false, reason: "not-enough-coins" };
+
+    const streakDays = { ...(d.streakDays || {}), [yesterdayKey]: true };
+    const restoresUsed = (d.streakRestoresUsed || 0) + 1;
+
+    tx.set(ref, {
+      coins: coins - cost,
+      lastStreakDay: yesterdayKey,
+      streakDays,
+      streakRestoresUsed: restoresUsed,
+    }, { merge: true });
+
+    // streak count itself (d.streak) is left untouched — it was never
+    // decremented when the day was missed (registerDailyLogin only ever
+    // increments or resets-to-1 on the NEXT login), so there's nothing to
+    // add back to it here. Restoring is really about un-breaking the CHAIN
+    // (lastStreakDay/streakDays) so today's login continues it instead of
+    // resetting it to 1.
+    return { ok: true, coins: coins - cost };
   });
 }
 
