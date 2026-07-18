@@ -379,6 +379,47 @@ export async function addSubjectSeconds(uid, subjectName, deltaSeconds) {
   });
 }
 
+/* ---------------------------- per-day subject time ---------------------------- */
+
+// users/{uid}/subjectDays/{dayKey} = { [subjectName]: seconds, ... }
+//
+// `subjectSeconds` above is a LIFETIME running total per subject — great for
+// achievement thresholds ("study Math for 10 hours, ever"), but wrong for a
+// "this week" breakdown since it never resets and mixes in every week the
+// user has ever studied. This day-keyed sibling (same shape/pattern as
+// studyDays) lets the Stats tab sum just the current week's days, so its
+// "Time by Subject" total lines up with the "Total Study Time (this week)"
+// card above it instead of showing an ever-growing lifetime figure next to
+// a weekly one.
+//
+// Written alongside (not instead of) addSubjectSeconds — both get credited
+// from the same flush in useSubjectTimer.js.
+export async function addSubjectSecondsForDay(uid, dayKey, subjectName, deltaSeconds) {
+  const delta = Math.max(0, Math.floor(deltaSeconds) || 0);
+  const name = (subjectName || "").trim();
+  if (!uid || !dayKey || !name || delta <= 0) return;
+
+  const ref = doc(db, "users", uid, "subjectDays", dayKey);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const prevMap = snap.exists() ? snap.data() : {};
+    const prevVal = prevMap[name] || 0;
+    tx.set(ref, { ...prevMap, [name]: prevVal + delta }, { merge: true });
+  });
+}
+
+// Range query across subjectDays docs, same pattern as watchStudyHistory —
+// returns { [dayKey]: { [subjectName]: seconds } }.
+export function watchSubjectHistory(uid, startKey, endKey, cb) {
+  const ref = collection(db, "users", uid, "subjectDays");
+  const q = query(ref, where(documentId(), ">=", startKey), where(documentId(), "<=", endKey));
+  return onSnapshot(q, (snap) => {
+    const history = {};
+    snap.forEach((d) => { history[d.id] = d.data() || {}; });
+    cb(history);
+  });
+}
+
 // Unlocks one or more achievements at once and credits their combined coin
 // reward, in a single transaction — so a batch of simultaneous unlocks
 // (e.g. crossing both "Study 1 Hour" and "Complete 10 Sessions" in the same
