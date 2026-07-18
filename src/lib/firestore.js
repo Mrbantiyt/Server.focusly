@@ -76,9 +76,25 @@ export function watchStudyHistory(uid, startKey, endKey, cb) {
 export async function addSubjectSeconds(uid, dayKey, subject, deltaSeconds) {
   if (!subject || deltaSeconds <= 0) return;
   const ref = doc(db, "users", uid, "subjectDays", dayKey);
+  // Dots are the field-path separator in Firestore's dot-notation keys
+  // (see the big comment below), so a subject name containing one (e.g.
+  // "B.Tech", "Physics.") would otherwise be misread as a path into a
+  // nested field instead of a literal map key. Strip dots from the key we
+  // write under — display/grouping still uses the subject's real name
+  // everywhere else, only the Firestore field key itself is sanitized.
+  const fieldKey = subject.replace(/\./g, "_");
+  // IMPORTANT: setDoc({ merge: true }) with a NESTED object value (e.g.
+  // { seconds: { [subject]: increment(1) } }) replaces the entire `seconds`
+  // map wholesale — merge only applies at the top level of the object you
+  // pass, not recursively inside it. That would silently wipe out every
+  // OTHER subject's already-saved seconds each time a different subject
+  // gets credited. Using a dot-notation field path key instead
+  // (`seconds.${fieldKey}`) makes Firestore treat it as a single scalar
+  // field at that exact path, so merge:true only ever touches that one
+  // subject's number and leaves every sibling subject field untouched.
   await setDoc(
     ref,
-    { seconds: { [subject]: increment(deltaSeconds) }, updatedAt: serverTimestamp() },
+    { [`seconds.${fieldKey}`]: increment(deltaSeconds), updatedAt: serverTimestamp() },
     { merge: true }
   );
 }
