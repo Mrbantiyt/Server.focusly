@@ -7,9 +7,10 @@ import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useStudyHistory } from "./hooks/useStudyHistory";
 import { useNotes } from "./hooks/useNotes";
 import { useGameStats } from "./hooks/useGameStats";
+import { useAchievements } from "./hooks/useAchievements";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
-import { watchUserProfile, watchAppUpdateConfig } from "./lib/firestore";
+import { watchUserProfile, watchAppUpdateConfig, incrementSessionsCompleted } from "./lib/firestore";
 import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -26,6 +27,7 @@ import UpdateBanner from "./components/UpdateBanner";
 import VerifyEmailGate from "./components/VerifyEmailGate";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
+import AchievementUnlockPopup from "./components/AchievementUnlockPopup";
 import NotificationsPanel from "./components/NotificationsPanel";
 import Store, { STORE_ITEMS } from "./components/Store";
 import Leaderboard from "./components/Leaderboard";
@@ -131,6 +133,35 @@ export default function App() {
   // counting).
   const totalStudySeconds =
     Object.entries(history).reduce((sum, [k, v]) => sum + (k === dayKey ? 0 : v), 0) + todaySeconds;
+
+  // Achievements watch a combined snapshot: everything gameStats already
+  // tracks (sessionsCompleted, streak, totalXp, lifetimeCoinsEarned,
+  // subjectSeconds, unlockedAchievements, loaded) plus totalStudySeconds,
+  // which only exists here at the App level (it's derived from
+  // history + todaySeconds, not stored directly on the user doc).
+  const { achievements, currentCelebration, dismissNextCelebration } = useAchievements(user?.uid, {
+    ...gameStats,
+    totalStudySeconds,
+  });
+
+  // Credits one completed Study Timer session the moment the countdown
+  // naturally finishes (edge-triggered on finished going false -> true, via
+  // sessionCreditedRef, so it fires exactly once per completion — not on
+  // every render while `finished` stays true, and not again if the user
+  // just leaves the finished screen up without resetting).
+  const sessionCreditedRef = useRef(false);
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (timerFinished && !sessionCreditedRef.current) {
+      sessionCreditedRef.current = true;
+      incrementSessionsCompleted(user.uid).catch((err) => {
+        console.warn("[achievements] Failed to credit session:", err);
+      });
+    }
+    if (!timerFinished) {
+      sessionCreditedRef.current = false;
+    }
+  }, [timerFinished, user?.uid]);
 
   // Study seconds since THIS week's Monday (today included) — what the
   // leaderboard now ranks on, so it naturally resets every Monday.
@@ -317,6 +348,9 @@ export default function App() {
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
                   billing={profileDoc?.billing}
+                  lastStreakDay={gameStats.lastStreakDay}
+                  onOpenStreak={() => setShowStreak(true)}
+                  achievements={achievements}
                   studyReminder={profileDoc?.studyReminder}
                   isMedianApp={isMedianApp()}
                   initialSection={settingsInitialSection}
@@ -367,10 +401,19 @@ export default function App() {
           onClose={() => { setShowLevel(false); setJustLeveledUp(false); }}
         />
       )}
+      {currentCelebration && (
+        <AchievementUnlockPopup
+          achievement={currentCelebration}
+          onDone={dismissNextCelebration}
+        />
+      )}
       {showStreak && (
         <StreakModal
           streak={gameStats.streak}
           streakDays={gameStats.streakDays}
+          lastStreakDay={gameStats.lastStreakDay}
+          uid={user.uid}
+          coins={gameStats.coins}
           onClose={() => setShowStreak(false)}
         />
       )}
