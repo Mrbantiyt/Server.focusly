@@ -3,41 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Play, Pause, RotateCcw, Flame } from "lucide-react";
 import { COL, neu } from "../theme";
 import { fmtHMS } from "../lib/time";
-
-// Plays a loud alert chime using the Web Audio API — no audio file/asset
-// needed, works even without any other audio permissions granted.
-// Returns the AudioContext so the caller can close it later.
-function playChime() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    const ctx = new Ctx();
-    const playTone = (startTime, freq, peakGain) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.0001, startTime);
-      gain.gain.exponentialRampToValueAtTime(peakGain, startTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.4);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(startTime);
-      osc.stop(startTime + 0.45);
-    };
-    const now = ctx.currentTime;
-    // Louder peak gain (0.3 -> 0.8) and a 3-note rising chime instead of 2
-    // soft notes, so a single burst is much more noticeable.
-    playTone(now, 880, 0.8);
-    playTone(now + 0.22, 880, 0.8);
-    playTone(now + 0.44, 1175, 0.85);
-    setTimeout(() => { try { ctx.close(); } catch { /* already closed */ } }, 900);
-    return ctx;
-  } catch {
-    // Web Audio not available/blocked — silently skip; the visual alert still shows.
-    return null;
-  }
-}
+import { playTimerCompleteChime } from "../lib/sound";
 
 export function TimerCard({
   remaining, durationSeconds, running, finished, todaySeconds,
@@ -54,8 +20,8 @@ export function TimerCard({
   // the background after the user has moved on.
   useEffect(() => {
     if (finished) {
-      playChime(); // immediate first chime
-      alertIntervalRef.current = setInterval(playChime, 1800);
+      playTimerCompleteChime(); // immediate first chime
+      alertIntervalRef.current = setInterval(playTimerCompleteChime, 1800);
     }
     return () => {
       if (alertIntervalRef.current) {

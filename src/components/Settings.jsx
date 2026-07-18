@@ -10,9 +10,10 @@ import {
   Database, HelpCircle, Clock, TrendingUp, TrendingDown, BarChart3, CreditCard, Gift, Sparkles, ExternalLink,
   Trophy, Mail,
 } from "lucide-react";
+import * as Icons from "lucide-react";
 import { COL, neu } from "../theme";
-import { fmtHrs, fmtCompact, getWeekStartKey } from "../lib/time";
-import { updateUserProfile, claimUsername, setActiveMascot, redeemCode } from "../lib/firestore";
+import { fmtHrs, fmtCompact, getWeekStartKey, dayKeyFor } from "../lib/time";
+import { updateUserProfile, claimUsername, setActiveMascot, redeemCode, isStreakRestoreEligible } from "../lib/firestore";
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS, XP_PER_TICK_BY_PLAN, COINS_PER_MINUTE_BY_PLAN } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
 import { STORE_ITEMS } from "./Store";
@@ -46,6 +47,91 @@ function PanelHeader({ title, onBack }) {
         <ChevronLeft size={17} color={COL.ink} />
       </button>
       <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>{title}</div>
+    </div>
+  );
+}
+
+/* ------------------------------ Achievements ------------------------------ */
+
+function AchievementBadge({ achievement }) {
+  const Icon = Icons[achievement.icon] || Icons.Award;
+  const locked = !achievement.unlocked;
+
+  return (
+    <div
+      style={neu(false, 20)}
+      className="p-4 flex flex-col items-center text-center"
+      // Locked badges are visually greyed out (desaturated icon + dim
+      // text) but still show their name/description/progress — per spec,
+      // "keep locked achievements greyed out" rather than hidden entirely.
+    >
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center mb-3"
+        style={{
+          background: locked ? COL.track : `linear-gradient(135deg, ${COL.coral}, ${COL.gold})`,
+          opacity: locked ? 0.5 : 1,
+        }}
+      >
+        <Icon size={24} color={locked ? COL.sub : "#fff"} />
+      </div>
+      <div className="font-display font-semibold text-sm mb-1" style={{ color: locked ? COL.sub : COL.ink }}>
+        {achievement.name}
+      </div>
+      <div className="font-body text-[11px] leading-snug mb-3" style={{ color: COL.sub, opacity: locked ? 0.8 : 1 }}>
+        {achievement.description}
+      </div>
+
+      {locked ? (
+        <>
+          <div className="w-full h-1.5 rounded-full mb-1.5" style={{ background: COL.track }}>
+            <div className="h-1.5 rounded-full" style={{ width: `${achievement.progressPct}%`, background: COL.violet }} />
+          </div>
+          <div className="font-body text-[10px]" style={{ color: COL.sub }}>
+            {achievement.progressPct}%
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center gap-1" style={{ color: COL.mint }}>
+          <Icons.CheckCircle2 size={12} />
+          <span className="font-body text-[10px] font-semibold uppercase tracking-wide">Unlocked</span>
+        </div>
+      )}
+
+      {achievement.reward > 0 && (
+        <div className="flex items-center gap-1 mt-2" style={{ color: COL.gold, opacity: locked ? 0.7 : 1 }}>
+          <Icons.Coins size={11} />
+          <span className="font-body text-[10px] font-semibold">+{achievement.reward.toLocaleString()}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AchievementsPanel({ achievements, onBack }) {
+  const unlockedCount = achievements.filter((a) => a.unlocked).length;
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PanelHeader title="Achievements" onBack={onBack} />
+
+      <div style={neu(true, 20)} className="p-4 flex items-center justify-between">
+        <div>
+          <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>
+            {unlockedCount} / {achievements.length}
+          </div>
+          <div className="font-body text-xs" style={{ color: COL.sub }}>Badges unlocked</div>
+        </div>
+        <div className="w-12 h-12 rounded-full flex items-center justify-center"
+          style={{ background: `linear-gradient(135deg, ${COL.violet}, ${COL.violetDeep})` }}>
+          <Icons.Trophy size={20} color="#fff" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {achievements.map((a) => (
+          <AchievementBadge key={a.id} achievement={a} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -379,21 +465,29 @@ function NotificationsPanel({ uid, studyReminder, isMedianApp, pushStatus, oneSi
 
 /* ---------------------------------- Your data ---------------------------------- */
 
-function StatTile({ icon: Icon, accent, label, value, note }) {
+function StatTile({ icon: Icon, accent, label, value, note, onClick }) {
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div style={neu(false, 20)} className="p-4">
+    <Wrapper style={neu(false, 20)} className="p-4 text-left w-full" onClick={onClick}>
       <div className="w-8 h-8 rounded-xl flex items-center justify-center mb-3" style={{ background: `${accent}22` }}>
         <Icon size={16} color={accent} />
       </div>
       <div className="font-display font-bold text-lg" style={{ color: COL.ink }}>{value}</div>
       <div className="font-body text-xs" style={{ color: COL.sub }}>{label}</div>
       {note && <div className="font-body text-[10px] mt-1" style={{ color: COL.sub, opacity: 0.75 }}>{note}</div>}
-    </div>
+    </Wrapper>
   );
 }
 
-function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins, streak, level, billing, myLeaderboardRank, onBack }) {
+function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins, streak, level, billing, myLeaderboardRank, lastStreakDay, onOpenStreak, onBack }) {
   const effectivePlan = getEffectivePlan(billing);
+
+  const todayKey = dayKeyFor(new Date());
+  const yD = new Date(); yD.setDate(yD.getDate() - 1);
+  const dbyD = new Date(); dbyD.setDate(dbyD.getDate() - 2);
+  const restoreEligible = isStreakRestoreEligible({
+    lastStreakDay, todayKey, yesterdayKey: dayKeyFor(yD), dayBeforeYesterdayKey: dayKeyFor(dbyD),
+  });
   const planLabel = PLAN_LABELS[effectivePlan];
   const daysRemaining = getDaysRemaining(billing);
   const planNote = effectivePlan === PLAN.FREE ? "No active subscription" : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} left`;
@@ -418,7 +512,11 @@ function YourDataPanel({ tasks, taskStats, todaySeconds, totalStudySeconds, hist
         <StatTile icon={Flame} accent={COL.violet} label="Total study time" value={fmtHrs(totalStudySeconds)} />
         <StatTile icon={CreditCard} accent={COL.mint} label="Plan" value={planLabel} note={planNote} />
         <StatTile icon={Coins} accent="#F5B301" label="Coins" value={fmtCompact(coins)} note="Level N pays N,000 coins" />
-        <StatTile icon={Flame} accent={COL.coral} label="Streak" value={streak} />
+        <StatTile
+          icon={Flame} accent={COL.coral} label="Streak" value={streak}
+          note={restoreEligible ? "Restore available →" : undefined}
+          onClick={restoreEligible ? onOpenStreak : undefined}
+        />
         <StatTile icon={Shield} accent={COL.violet} label="Level" value={`Lv ${level}`} />
         <StatTile icon={Clock} accent={COL.blue} label="Weekly total" value={fmtHrs(weeklyTotal)} note="Last 7 days" />
         <StatTile icon={Clock} accent={COL.violet} label="Daily average" value={fmtHrs(dailyAverage)} note="Per day this week" />
@@ -929,7 +1027,7 @@ function ChangeEmailPanel({ user, requestEmailChange, confirmEmailChange, onBack
 
 
 
-export default function Settings({ user, pushStatus, oneSignalUserId = null, onRefreshPushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
+export default function Settings({ user, pushStatus, oneSignalUserId = null, onRefreshPushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, lastStreakDay = null, onOpenStreak, achievements = [], studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
@@ -944,11 +1042,13 @@ export default function Settings({ user, pushStatus, oneSignalUserId = null, onR
       />
     );
   }
+  if (section === "achievements") return <AchievementsPanel achievements={achievements} onBack={() => setSection(null)} />;
   if (section === "data") {
     return (
       <YourDataPanel
         tasks={tasks} taskStats={taskStats} todaySeconds={todaySeconds} totalStudySeconds={totalStudySeconds}
-        history={history} dayKey={dayKey} coins={coins} streak={streak} level={level} billing={billing} myLeaderboardRank={myLeaderboardRank} onBack={() => setSection(null)}
+        history={history} dayKey={dayKey} coins={coins} streak={streak} level={level} billing={billing} myLeaderboardRank={myLeaderboardRank}
+        lastStreakDay={lastStreakDay} onOpenStreak={onOpenStreak} onBack={() => setSection(null)}
       />
     );
   }
@@ -982,6 +1082,7 @@ export default function Settings({ user, pushStatus, oneSignalUserId = null, onR
 
       <SectionLabel>Your account</SectionLabel>
       <MenuRow icon={Database} iconBg="rgba(123,110,246,0.15)" iconColor={COL.violet} label="Your data" onClick={() => setSection("data")} />
+      <MenuRow icon={Trophy} iconBg="rgba(255,182,72,0.15)" iconColor={COL.gold} label="Achievements" onClick={() => setSection("achievements")} />
       <MenuRow icon={BarChart3} iconBg="rgba(90,167,255,0.15)" iconColor={COL.blue} label="Weekly Analytics" onClick={() => setSection("analytics")} />
       <MenuRow icon={Trophy} iconBg="rgba(245,179,1,0.15)" iconColor="#F5B301" label="Leaderboard" onClick={() => setSection("leaderboard")} />
       <MenuRow icon={CreditCard} iconBg="rgba(63,207,163,0.15)" iconColor={COL.mint} label="Billing" onClick={() => setSection("billing")} />

@@ -9,8 +9,12 @@
 // computation or persistence of its own — it only renders whatever the
 // backend says the streak currently is.
 import React, { useEffect, useState } from "react";
-import { X, Flame, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react";
+import { X, Flame, ChevronLeft, ChevronRight, CheckCircle2, RotateCcw } from "lucide-react";
 import { COL, neu } from "../theme";
+import { dayKeyFor } from "../lib/time";
+import { isStreakRestoreEligible, restoreStreak } from "../lib/firestore";
+
+export const STREAK_RESTORE_COST = 10000;
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [
@@ -159,11 +163,42 @@ function StreakFlameIcon({ ignited = true, size = 96 }) {
 /*   streakDays  — { "YYYY-MM-DD": true, ... } map of completed days       */
 /*   onClose     — close handler                                          */
 /* ---------------------------------------------------------------------- */
-export default function StreakModal({ streak, streakDays, onClose }) {
+export default function StreakModal({ streak, streakDays, lastStreakDay, uid, coins = 0, onClose }) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
   const [phase, setPhase] = useState("ignite"); // ignite -> flare -> settled
+  const [restoreState, setRestoreState] = useState("idle"); // idle -> pending -> done | error
+  const [restoreError, setRestoreError] = useState(null);
+
+  const todayKey = dayKeyFor(now);
+  const yesterdayD = new Date(now); yesterdayD.setDate(yesterdayD.getDate() - 1);
+  const dayBeforeD = new Date(now); dayBeforeD.setDate(dayBeforeD.getDate() - 2);
+  const yesterdayKey = dayKeyFor(yesterdayD);
+  const dayBeforeYesterdayKey = dayKeyFor(dayBeforeD);
+
+  const restoreEligible = restoreState !== "done" && isStreakRestoreEligible({
+    lastStreakDay, todayKey, yesterdayKey, dayBeforeYesterdayKey,
+  });
+
+  const handleRestore = async () => {
+    if (!uid || restoreState === "pending") return;
+    setRestoreError(null);
+    setRestoreState("pending");
+    try {
+      const res = await restoreStreak(uid, { todayKey, yesterdayKey, dayBeforeYesterdayKey, cost: STREAK_RESTORE_COST });
+      if (res.ok) {
+        setRestoreState("done");
+      } else {
+        setRestoreState("error");
+        setRestoreError(res.reason === "not-enough-coins" ? "Not enough coins." : "Streak can no longer be restored.");
+      }
+    } catch (err) {
+      console.warn("[streak] restore failed:", err);
+      setRestoreState("error");
+      setRestoreError("Something went wrong. Try again.");
+    }
+  };
 
   useEffect(() => {
     const a = setTimeout(() => setPhase("flare"), 1300);
@@ -188,7 +223,6 @@ export default function StreakModal({ streak, streakDays, onClose }) {
   };
 
   const handleClose = () => { if (phase === "settled") onClose(); };
-  const todayKey = dayKey(now.getFullYear(), now.getMonth(), now.getDate());
   const isIntro = phase !== "settled";
 
   return (
@@ -297,6 +331,40 @@ export default function StreakModal({ streak, streakDays, onClose }) {
               <div className="font-body text-xs" style={{ color: COL.sub }}>Current Streak</div>
             </div>
           </div>
+
+          {restoreEligible && (
+            <div style={neu(true, 18)} className="p-4 mt-4">
+              <div className="flex items-center gap-2 mb-1">
+                <RotateCcw size={16} color={COL.gold} />
+                <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>You missed a day</span>
+              </div>
+              <p className="font-body text-xs mb-3" style={{ color: COL.sub }}>
+                Restore yesterday to keep your {streak}-day streak alive.
+              </p>
+              <button
+                onClick={handleRestore}
+                disabled={restoreState === "pending"}
+                className="w-full py-2.5 rounded-full font-display font-semibold text-sm"
+                style={{
+                  background: `linear-gradient(135deg, ${COL.coral}, ${COL.gold})`,
+                  color: "#fff",
+                  opacity: restoreState === "pending" ? 0.7 : 1,
+                }}
+              >
+                {restoreState === "pending" ? "Restoring…" : `Restore Streak — ${STREAK_RESTORE_COST.toLocaleString()} coins`}
+              </button>
+              {restoreError && (
+                <p className="font-body text-xs mt-2 text-center" style={{ color: COL.coral }}>{restoreError}</p>
+              )}
+            </div>
+          )}
+
+          {restoreState === "done" && (
+            <div style={neu(false, 18)} className="p-4 mt-4 flex items-center gap-2">
+              <CheckCircle2 size={16} color={COL.mint} />
+              <span className="font-body text-xs" style={{ color: COL.ink }}>Streak restored! Log in tomorrow to keep it going.</span>
+            </div>
+          )}
         </div>
       )}
 
