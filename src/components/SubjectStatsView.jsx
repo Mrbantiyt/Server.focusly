@@ -7,10 +7,11 @@
 //   1. Total Study Time  — 7-day (Mon-Sun) trend, from `history` + today.
 //   2. Time by Subject   — donut built from `subjectHistory`, a day-keyed
 //      per-subject map (see lib/firestore.js: addSubjectSecondsForDay /
-//      watchSubjectHistory) written by the Custom Timer. Summed over the
-//      SAME 7 days as card 1 above, so its total actually agrees with
-//      "Total Study Time" instead of drifting apart like an ever-growing
-//      lifetime total would.
+//      watchSubjectHistory) written by the Custom Timer. Shows ONLY today's
+//      entry (subjectHistory[todayKey]) and resets at local midnight, same
+//      as "Total Study Time"'s daily bucket — it intentionally does NOT sum
+//      the whole Mon-Sun week like card 1 does, so it can be lower than
+//      "Total Study Time" (which is a weekly figure) even on a single day.
 //   3. Focus Rate        — how close each of the last 7 days got to a daily
 //      study-time goal (DAILY_GOAL_HOURS below). There's no per-session
 //      "were you actually focused" signal in this app yet, so this is
@@ -56,18 +57,20 @@ export default function SubjectStatsView({ history, todayKey, todaySeconds, subj
 
   const weekTotalSeconds = weekDays.reduce((sum, d) => sum + d.secs, 0);
 
+  // Changed from a Mon-Sun weekly sum to TODAY-ONLY, so this card resets at
+  // local midnight just like "Total Study Time"/todaySeconds do, instead of
+  // waiting for the next Monday. Only `subjectHistory[todayKey]` is read now.
   const bySubject = useMemo(() => {
     const totals = {};
-    weekDays.forEach((d) => {
-      const dayMap = (subjectHistory || {})[d.key];
-      if (!dayMap) return;
+    const dayMap = (subjectHistory || {})[todayKey];
+    if (dayMap) {
       Object.entries(dayMap).forEach(([name, secs]) => {
         if (typeof secs === "number" && secs > 0) totals[name] = (totals[name] || 0) + secs;
       });
-    });
+    }
     const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
     return entries.map(([name, secs], i) => ({ name, secs, color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length] }));
-  }, [subjectHistory, weekDays]);
+  }, [subjectHistory, todayKey]);
   const subjectTotalSeconds = bySubject.reduce((sum, e) => sum + e.secs, 0);
 
   const focusRateToday = Math.min(100, Math.round((todaySeconds / 3600 / DAILY_GOAL_HOURS) * 100));
@@ -101,11 +104,11 @@ export default function SubjectStatsView({ history, todayKey, todaySeconds, subj
 
       {/* Time by Subject */}
       <div style={neu(false, 24)} className="p-5">
-        <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Time by Subject (this week)</span>
+        <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>Time by Subject (today)</span>
         {bySubject.length === 0 ? (
           <div className="mt-3 text-center py-4">
             <p className="font-body text-xs" style={{ color: COL.sub }}>
-              No subject data yet this week — use the Custom (multi-subject) Timer on Home to start tracking time per subject.
+              No subject data yet today — use the Custom (multi-subject) Timer on Home to start tracking time per subject.
             </p>
           </div>
         ) : (
