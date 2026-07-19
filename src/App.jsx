@@ -89,7 +89,12 @@ export default function App() {
     if (!user) { setProfileDoc(null); return; }
     return watchUserProfile(user.uid, setProfileDoc);
   }, [user]);
-  const gameStats = useGameStats(user?.uid, running, profileDoc?.billing);
+  // XP/coin accrual should run while EITHER timer is actively counting —
+  // previously only the Study (countdown) Timer's `running` was passed in,
+  // so time spent in the Custom (multi-subject) Timer banked "Time today"
+  // but never earned XP/coins. ORing both `running` flags fixes that
+  // without touching how either timer works internally.
+  const gameStats = useGameStats(user?.uid, running || subjectTimer.running, profileDoc?.billing);
   const { notifications, unreadCount } = useNotifications(user?.uid);
   const [showLevel, setShowLevel] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
