@@ -30,13 +30,33 @@ service cloud.firestore {
       match /notes/{noteId} {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
-      // Sent by the admin panel via the Admin SDK (bypasses these rules
-      // entirely for that write). Client-side, a user may only read their
-      // own notifications and update/delete them (marking read, claiming
-      // a reward, deleting) — never create one for themselves.
+      // Most notifications are sent by the admin panel via the Admin SDK
+      // (bypasses these rules entirely for that write). Client-side, a
+      // user may only read their own notifications and update/delete them
+      // (marking read, claiming a reward, deleting) — never create a
+      // regular one for themselves.
+      //
+      // ONE narrow exception: type == "achievement". Achievement unlocks
+      // are detected client-side (useAchievements.js) and their reward is
+      // credited immediately via a transaction on the user doc itself
+      // (unlockAchievements() in lib/firestore.js) — this notification
+      // doc is just a durable receipt of that event for the bell/panel UI,
+      // not a second reward grant. So this is allowed to be
+      // client-created, but ONLY as an already-claimed, non-payable
+      // record: claimed must be true (so tapping "Claim" in the UI can
+      // never trigger claimNotification's coins/xp/item credit path a
+      // second time), and amount/itemId must be absent (achievement
+      // rewards are shown from the notification's own coinsAwarded/
+      // xpAwarded fields, not the claimable amount/itemId fields other
+      // notification types use) — so this exception can't be repurposed
+      // to self-grant an arbitrary coins/xp/item reward.
       match /notifications/{notifId} {
         allow read, update, delete: if request.auth != null && request.auth.uid == uid;
-        allow create: if false;
+        allow create: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.type == "achievement"
+          && request.resource.data.claimed == true
+          && !("amount" in request.resource.data)
+          && !("itemId" in request.resource.data);
       }
     }
 
@@ -133,6 +153,29 @@ service cloud.firestore {
     // merged onto the hardcoded pack list client-side. Written ONLY by the
     // admin panel via the Admin SDK. Clients only ever read.
     match /storeItemsCustom/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // achievementOverrides/{achievementId} = { name?, description?, imageUrl?, metric?, target?, reward?, xpReward? }
+    // Admin-set field overrides for hardcoded (built-in) achievements —
+    // same pattern as storeItemOverrides above, but for Achievements.
+    // Written ONLY by the admin panel via the Admin SDK. Clients only ever
+    // need to read this collection so the Achievements UI can merge
+    // overrides onto the hardcoded achievement list live.
+    match /achievementOverrides/{achievementId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // achievementsCustom/{achievementId} = { name, description, imageUrl, metric, target, reward, xpReward, subject? }
+    // Fully custom achievements added from the admin panel (e.g. "Night
+    // Owl"), merged onto the hardcoded achievement list client-side.
+    // Written ONLY by the admin panel via the Admin SDK. Clients only ever
+    // read — the actual "unlock + pay reward" write for these still goes
+    // through unlockAchievements() writing to the user's own doc, same as
+    // for built-in achievements.
+    match /achievementsCustom/{achievementId} {
       allow read: if request.auth != null;
       allow write: if false;
     }
