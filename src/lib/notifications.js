@@ -37,15 +37,21 @@
 
 import {
   collection, doc, addDoc, deleteDoc, getDocs, writeBatch, onSnapshot,
-  query, orderBy, runTransaction, increment, serverTimestamp,
+  query, orderBy, limit, runTransaction, increment, serverTimestamp,
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 
 const CHUNK = 450; // stay under Firestore's 500-write batch cap
+const NOTIFICATIONS_LIMIT = 50; // most-recent notifications shown in the bell panel
 
 export function watchNotifications(uid, cb) {
   const ref = collection(db, "users", uid, "notifications");
-  const q = query(ref, orderBy("createdAt", "desc"));
+  // Without this limit, the listener re-fetches EVERY notification a user
+  // has ever gotten (admin messages + every achievement unlock, etc.) on
+  // every app load — the more history a user builds up, the slower the
+  // bell panel and the app itself feel to load. 50 most-recent is plenty
+  // for what the panel actually displays.
+  const q = query(ref, orderBy("createdAt", "desc"), limit(NOTIFICATIONS_LIMIT));
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
