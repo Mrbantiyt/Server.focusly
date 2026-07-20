@@ -1,6 +1,6 @@
 // src/components/NotificationsPanel.jsx
 import React, { useState } from "react";
-import { X, Coins, Sparkles, Gift, Bell, Trash2, Loader2, Check } from "lucide-react";
+import { X, Coins, Sparkles, Gift, Bell, Trash2, Loader2, Check, Trophy } from "lucide-react";
 import { COL, neu } from "../theme";
 import { STORE_ITEMS } from "../lib/storeItems";
 import { claimNotification, deleteAllNotifications } from "../lib/notifications";
@@ -21,6 +21,7 @@ function iconFor(type) {
   if (type === "coins") return { Icon: Coins, color: COL.gold };
   if (type === "xp") return { Icon: Sparkles, color: COL.violet };
   if (type === "item") return { Icon: Gift, color: COL.mint };
+  if (type === "achievement") return { Icon: Trophy, color: COL.gold };
   return { Icon: Bell, color: COL.blue };
 }
 
@@ -31,13 +32,19 @@ function rewardLabel(n) {
     const item = STORE_ITEMS.find((it) => it.id === n.itemId);
     return item ? `New icon: ${item.name}` : "New app icon";
   }
+  if (n.type === "achievement") {
+    const parts = [];
+    if (n.coinsAwarded > 0) parts.push(`+${n.coinsAwarded} coins`);
+    if (n.xpAwarded > 0) parts.push(`+${n.xpAwarded} XP`);
+    return parts.length ? parts.join(", ") : null;
+  }
   return null;
 }
 
 function NotificationRow({ uid, notif }) {
   const [claiming, setClaiming] = useState(false);
   const { Icon, color } = iconFor(notif.type);
-  const isReward = notif.type === "coins" || notif.type === "xp" || notif.type === "item";
+  const isReward = notif.type === "coins" || notif.type === "xp" || notif.type === "item" || notif.type === "achievement";
   const reward = isReward ? rewardLabel(notif) : null;
 
   async function handleClaim() {
@@ -72,8 +79,9 @@ function NotificationRow({ uid, notif }) {
 
           {isReward && (
             notif.claimed ? (
-              <span className="flex items-center gap-1 font-body text-[11px] font-semibold" style={{ color: COL.mint }}>
-                <Check size={12} /> Claimed
+              <span className="flex items-center gap-1.5 font-body text-[11px] font-semibold" style={{ color: COL.mint }}>
+                <Check size={12} />
+                {reward ? reward : "Claimed"}
               </span>
             ) : (
               <button

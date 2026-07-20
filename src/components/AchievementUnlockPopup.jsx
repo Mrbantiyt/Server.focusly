@@ -44,10 +44,14 @@ export default function AchievementUnlockPopup({ achievement, onDone }) {
         <div className="relative mb-4 au-badge-in">
           <div className="au-glow-ring" />
           <div
-            className="w-20 h-20 rounded-full flex items-center justify-center relative"
+            className="w-20 h-20 rounded-full flex items-center justify-center relative overflow-hidden"
             style={{ background: `linear-gradient(135deg, ${COL.coral}, ${COL.gold})`, boxShadow: "0 10px 30px rgba(255,150,60,0.35)" }}
           >
-            <Icon size={34} color="#fff" />
+            {achievement.imageUrl ? (
+              <img src={achievement.imageUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Icon size={34} color="#fff" />
+            )}
           </div>
         </div>
 
@@ -58,12 +62,24 @@ export default function AchievementUnlockPopup({ achievement, onDone }) {
           {achievement.description}
         </div>
 
-        {achievement.reward > 0 && (
-          <div style={neu(true, 999)} className="px-4 py-2 flex items-center gap-2">
-            <Icons.Coins size={14} color={COL.gold} />
-            <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>
-              +{achievement.reward.toLocaleString()} coins
-            </span>
+        {(achievement.reward > 0 || achievement.xpReward > 0) && (
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            {achievement.reward > 0 && (
+              <div style={neu(true, 999)} className="px-4 py-2 flex items-center gap-2">
+                <Icons.Coins size={14} color={COL.gold} />
+                <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>
+                  +{achievement.reward.toLocaleString()} coins
+                </span>
+              </div>
+            )}
+            {achievement.xpReward > 0 && (
+              <div style={neu(true, 999)} className="px-4 py-2 flex items-center gap-2">
+                <Icons.Shield size={14} color={COL.violet} />
+                <span className="font-display font-semibold text-sm" style={{ color: COL.ink }}>
+                  +{achievement.xpReward.toLocaleString()} XP
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

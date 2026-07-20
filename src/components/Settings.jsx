@@ -66,13 +66,22 @@ function AchievementBadge({ achievement }) {
       // "keep locked achievements greyed out" rather than hidden entirely.
     >
       <div
-        className="w-14 h-14 rounded-full flex items-center justify-center mb-3"
+        className="w-14 h-14 rounded-full flex items-center justify-center mb-3 overflow-hidden"
         style={{
           background: locked ? COL.track : `linear-gradient(135deg, ${COL.coral}, ${COL.gold})`,
           opacity: locked ? 0.5 : 1,
         }}
       >
-        <Icon size={24} color={locked ? COL.sub : "#fff"} />
+        {achievement.imageUrl ? (
+          <img
+            src={achievement.imageUrl}
+            alt=""
+            className="w-full h-full object-cover"
+            style={{ filter: locked ? "grayscale(100%)" : "none" }}
+          />
+        ) : (
+          <Icon size={24} color={locked ? COL.sub : "#fff"} />
+        )}
       </div>
       <div className="font-display font-semibold text-sm mb-1" style={{ color: locked ? COL.sub : COL.ink }}>
         {achievement.name}
@@ -97,10 +106,20 @@ function AchievementBadge({ achievement }) {
         </div>
       )}
 
-      {achievement.reward > 0 && (
-        <div className="flex items-center gap-1 mt-2" style={{ color: COL.gold, opacity: locked ? 0.7 : 1 }}>
-          <Icons.Coins size={11} />
-          <span className="font-body text-[10px] font-semibold">+{achievement.reward.toLocaleString()}</span>
+      {(achievement.reward > 0 || achievement.xpReward > 0) && (
+        <div className="flex items-center gap-2 mt-2">
+          {achievement.reward > 0 && (
+            <div className="flex items-center gap-1" style={{ color: COL.gold, opacity: locked ? 0.7 : 1 }}>
+              <Icons.Coins size={11} />
+              <span className="font-body text-[10px] font-semibold">+{achievement.reward.toLocaleString()}</span>
+            </div>
+          )}
+          {achievement.xpReward > 0 && (
+            <div className="flex items-center gap-1" style={{ color: COL.violet, opacity: locked ? 0.7 : 1 }}>
+              <Icons.Shield size={11} />
+              <span className="font-body text-[10px] font-semibold">+{achievement.xpReward.toLocaleString()} XP</span>
+            </div>
+          )}
         </div>
       )}
     </div>
