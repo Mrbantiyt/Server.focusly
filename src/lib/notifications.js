@@ -7,24 +7,32 @@
 // message.
 //
 // users/{uid}/notifications/{notifId} = {
-//   type: "message" | "coins" | "xp" | "item",
+//   type: "message" | "coins" | "xp" | "item" | "achievement",
 //   title: string,
 //   body: string,
 //   amount: number | null,   // for type "coins" / "xp"
 //   itemId: string | null,   // for type "item" — an id from lib/storeItems.js
-//   claimed: boolean,        // only meaningful for coins/xp/item
+//   claimed: boolean,        // only meaningful for coins/xp/item — for
+//                            // "achievement" this is always true (see below)
 //   read: boolean,
 //   createdAt: server timestamp,
+//   // "achievement"-only fields:
+//   achievementId: string | null,   // which achievement this celebrates
+//   coinsAwarded: number | null,    // coins actually credited (may be 0)
+//   xpAwarded: number | null,       // xp actually credited (may be 0)
 // }
 //
-// Written by the admin panel's api/send-notification.js via the Admin SDK
-// (bypasses firestore.rules entirely, same as every other admin write) —
-// the client only ever reads its own notifications and writes `read`/
-// `claimed`/deletes on its own subcollection, per firestore.rules.
+// Every type except "achievement" is written by the admin panel's
+// api/send-notification.js via the Admin SDK (bypasses firestore.rules
+// entirely, same as every other admin write). "achievement" notifications
+// are the one type the client creates itself (see notifyAchievementUnlocked
+// below) — the client only ever reads its own notifications and writes
+// `read`/`claimed`/deletes on its own subcollection otherwise, per
+// firestore.rules.
 
 import {
-  collection, doc, deleteDoc, getDocs, writeBatch, onSnapshot,
-  query, orderBy, runTransaction, increment,
+  collection, doc, addDoc, deleteDoc, getDocs, writeBatch, onSnapshot,
+  query, orderBy, runTransaction, increment, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -103,4 +111,36 @@ export async function claimNotification(uid, notifId) {
 
     tx.update(notifRef, { claimed: true, read: true });
   });
+}
+
+// Writes a durable "you unlocked X" record to the bell/notifications panel
+// the moment an achievement is unlocked (called from useAchievements.js,
+// right after unlockAchievements() successfully credits the reward). This
+// is NOT a claimable grant — claimed is always true, since the coins/xp
+// were already credited by that same unlock transaction. It exists purely
+// so the achievement shows up later in Notifications (per the person's
+// request: "achievement complete hone par notification mein bhi aaye,
+// naam + reward ke saath"), not to grant anything a second time.
+//
+// Best-effort: if this write fails (e.g. offline), the achievement is
+// still unlocked and paid — the person just won't see a notification
+// entry for it, which is a much smaller loss than blocking or duplicating
+// the reward itself. Errors are swallowed for that reason.
+export async function notifyAchievementUnlocked(uid, achievement, { coinsAwarded, xpAwarded }) {
+  try {
+    const ref = collection(db, "users", uid, "notifications");
+    await addDoc(ref, {
+      type: "achievement",
+      title: "Achievement unlocked!",
+      body: achievement.name,
+      achievementId: achievement.id,
+      coinsAwarded: coinsAwarded || 0,
+      xpAwarded: xpAwarded || 0,
+      claimed: true,
+      read: false,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn("[notifications] Failed to record achievement notification:", err);
+  }
 }

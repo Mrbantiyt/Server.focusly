@@ -421,18 +421,25 @@ export function watchSubjectHistory(uid, startKey, endKey, cb) {
 }
 
 // Unlocks one or more achievements at once and credits their combined coin
-// reward, in a single transaction — so a batch of simultaneous unlocks
-// (e.g. crossing both "Study 1 Hour" and "Complete 10 Sessions" in the same
-// tick) can't race with itself or with another coin-changing action
-// (purchase, restore, level-up) the way two separate un-transacted writes
-// could.
+// AND xp reward, in a single transaction — so a batch of simultaneous
+// unlocks (e.g. crossing both "Study 1 Hour" and "Complete 10 Sessions" in
+// the same tick) can't race with itself or with another coin/xp-changing
+// action (purchase, restore, level-up, addXp) the way two separate
+// un-transacted writes could.
 //
 // Re-checks `owned.includes(id)` per-id inside the transaction (not just
 // trusting the caller's `ids` list) so a duplicate/late-arriving call after
 // the achievement was already unlocked elsewhere is a safe no-op for that
 // id rather than double-paying its reward.
+//
+// xpReward is credited the same way addXp() credits xp: added to the
+// user's lifetime `xp` field (which also drives level, via levelFromXp),
+// and if that push crosses one or more level boundaries, the usual
+// per-level coin bonus (level * 1000) is paid too — same rule as any other
+// source of XP, so an XP-rewarding achievement can't be a "cheaper" way to
+// level up than studying.
 export async function unlockAchievements(uid, idsWithRewards) {
-  if (!idsWithRewards.length) return { ok: true, newlyUnlocked: [], coinsAwarded: 0 };
+  if (!idsWithRewards.length) return { ok: true, newlyUnlocked: [], coinsAwarded: 0, xpAwarded: 0 };
   const ref = doc(db, "users", uid);
 
   return runTransaction(db, async (tx) => {
@@ -440,25 +447,41 @@ export async function unlockAchievements(uid, idsWithRewards) {
     const d = snap.exists() ? snap.data() : {};
     const owned = new Set(d.unlockedAchievements || []);
     const coins = d.coins || 0;
+    const prevXp = d.xp || 0;
 
     const newlyUnlocked = [];
     let coinsAwarded = 0;
-    for (const { id, reward } of idsWithRewards) {
+    let xpAwarded = 0;
+    for (const { id, reward, xpReward } of idsWithRewards) {
       if (owned.has(id)) continue;
       owned.add(id);
       newlyUnlocked.push(id);
       coinsAwarded += reward || 0;
+      xpAwarded += xpReward || 0;
     }
 
-    if (newlyUnlocked.length === 0) return { ok: true, newlyUnlocked: [], coinsAwarded: 0 };
+    if (newlyUnlocked.length === 0) return { ok: true, newlyUnlocked: [], coinsAwarded: 0, xpAwarded: 0 };
+
+    const newXp = prevXp + xpAwarded;
+    let levelUpCoins = 0;
+    if (xpAwarded > 0) {
+      const prevLevel = levelFromXp(prevXp).level;
+      const newLevel = levelFromXp(newXp).level;
+      for (let lvl = prevLevel + 1; lvl <= newLevel; lvl++) {
+        levelUpCoins += lvl * 1000;
+      }
+    }
+
+    const totalCoinsAwarded = coinsAwarded + levelUpCoins;
 
     tx.set(ref, {
       unlockedAchievements: Array.from(owned),
-      coins: coins + coinsAwarded,
-      lifetimeCoinsEarned: (d.lifetimeCoinsEarned || 0) + coinsAwarded,
+      coins: coins + totalCoinsAwarded,
+      lifetimeCoinsEarned: (d.lifetimeCoinsEarned || 0) + totalCoinsAwarded,
+      xp: newXp,
     }, { merge: true });
 
-    return { ok: true, newlyUnlocked, coinsAwarded };
+    return { ok: true, newlyUnlocked, coinsAwarded, xpAwarded };
   });
 }
 
