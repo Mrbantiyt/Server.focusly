@@ -76,12 +76,15 @@ export async function syncPushSubscription(uid) {
 
   try {
     const info = await window.median.onesignal.onesignalInfo();
-    // The new (non-legacy) OneSignal SDK returns the subscription id as
-    // `oneSignalId` and subscription status nested under
-    // `subscription.optedIn`, instead of the older `oneSignalUserId` /
-    // `oneSignalSubscribed` fields. Check both shapes so this works
+    // IMPORTANT: `info.oneSignalId` is the user-level OneSignal ID (shared
+    // across every device/subscription a person has), NOT the per-device
+    // Subscription ID. OneSignal's REST API's `include_subscription_ids`
+    // field (used by our backend to target a push) needs the actual
+    // Subscription ID, which lives at `info.subscription.id` on the new
+    // (non-legacy) SDK. The old Legacy Mode SDK instead returns it at the
+    // top level as `oneSignalUserId`. Check both shapes so this works
     // whether Legacy Mode is on or off in Median App Studio.
-    const oneSignalUserId = info?.oneSignalId || info?.oneSignalUserId || null;
+    const oneSignalUserId = info?.subscription?.id || info?.oneSignalUserId || null;
     const subscribed = info?.subscription?.optedIn ?? !!info?.oneSignalSubscribed;
     console.log(`${LOG_PREFIX} onesignalInfo() ->`, { oneSignalUserId, subscribed });
 

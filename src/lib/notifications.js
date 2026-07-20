@@ -1,10 +1,15 @@
 // src/lib/notifications.js
 //
 // In-app notifications sent by the admin panel. Separate from OneSignal
-// push (src/lib/median.js) — this is what powers the bell icon on the
-// Dashboard: a live list stored per-user in Firestore, which can carry a
-// claimable reward (coins, XP, or a store item/mascot) alongside a plain
-// message.
+// push (src/lib/median.js) for the "message"/"coins"/"xp"/"item" types —
+// this is what powers the bell icon on the Dashboard: a live list stored
+// per-user in Firestore, which can carry a claimable reward (coins, XP, or
+// a store item/mascot) alongside a plain message.
+//
+// The "achievement" type is the one exception: notifyAchievementUnlocked
+// below both writes the in-app bell entry AND fires a best-effort OneSignal
+// push (via api/notify-achievement-push.js) so achievement unlocks are
+// nudged the same way Timer completion and admin broadcasts are.
 //
 // users/{uid}/notifications/{notifId} = {
 //   type: "message" | "coins" | "xp" | "item" | "achievement",
@@ -34,7 +39,7 @@ import {
   collection, doc, addDoc, deleteDoc, getDocs, writeBatch, onSnapshot,
   query, orderBy, runTransaction, increment, serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 
 const CHUNK = 450; // stay under Firestore's 500-write batch cap
 
@@ -142,5 +147,23 @@ export async function notifyAchievementUnlocked(uid, achievement, { coinsAwarded
     });
   } catch (err) {
     console.warn("[notifications] Failed to record achievement notification:", err);
+  }
+
+  // Best-effort OneSignal push nudge on top of the in-app bell entry above —
+  // same "never block the real thing over this" tradeoff as the Timer's
+  // push (src/lib/timerNotifications.js). A failure here (no push
+  // permission, server not configured, network hiccup) must never affect
+  // the achievement itself, which is already unlocked/paid/recorded by now.
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+    const idToken = await user.getIdToken();
+    await fetch("/api/notify-achievement-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ achievementName: achievement.name }),
+    });
+  } catch (err) {
+    console.warn("[notifications] Achievement push notification failed (non-fatal):", err);
   }
 }
