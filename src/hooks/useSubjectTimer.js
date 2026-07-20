@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { dayKeyFor } from "../lib/time";
 import { playTimerCompleteChime } from "../lib/sound";
 import { addSubjectSeconds, addSubjectSecondsForDay } from "../lib/firestore";
+import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timerNotifications";
 
 // ---------------------------------------------------------------------------
 // CUSTOM (MULTI-SUBJECT) TIMER
@@ -160,12 +161,22 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Push should only fire once the WHOLE plan is done, not the current
+    // subject — so schedule it `secondsLeftInWholePlan` seconds out (time
+    // left on the active subject + every subject still queued after it).
+    const secondsLeftInWholePlan =
+      remainingRef.current +
+      planRef.current.slice(activeIndexRef.current + 1).reduce((sum, s) => sum + s.totalSeconds, 0);
+    scheduleTimerNotification(secondsLeftInWholePlan);
     persistNow();
   };
 
   const pause = () => {
     runningRef.current = false;
     setRunning(false);
+    // Countdown stopped early — cancel the pending push so it doesn't fire
+    // later for a plan that's no longer running.
+    cancelTimerNotification();
     persistNow();
     flushPendingSubjectSeconds();
   };
@@ -183,6 +194,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setRemaining(firstRemaining);
     setFinished(false);
     stopChime();
+    cancelTimerNotification();
     persistNow();
     flushPendingSubjectSeconds();
   };
@@ -199,6 +211,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setRemaining(0);
     setFinished(false);
     stopChime();
+    cancelTimerNotification();
     persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false });
     flushPendingSubjectSeconds();
   };
