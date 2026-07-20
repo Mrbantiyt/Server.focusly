@@ -1,6 +1,16 @@
 // api/schedule-timer-notification.js
 //
-// Study Timer completion alert, delivered even if the app is closed/backgrounded.
+// Study Timer AND Custom (multi-subject) Timer completion alert, delivered
+// even if the app is closed/backgrounded.
+//
+// NOTE — shared single slot per user: both src/hooks/useCountdownTimer.js
+// (Study Timer) and src/hooks/useSubjectTimer.js (Custom Timer) call this
+// same endpoint and share one `users/{uid}.timerNotification` slot. Each
+// Start replaces whatever was previously scheduled here. This matches how
+// the in-app countdowns already work (both bank into the same "Time today"
+// total) and covers the normal case of running one timer at a time. If a
+// user starts BOTH timers at once, whichever Start call lands last wins the
+// scheduled push slot — a rare edge case, not handled specially here.
 //
 // The Timer card's in-app beep (src/components/TimerCard.jsx) only fires
 // while the tab/app is open and in memory — if the user backgrounds the app
@@ -57,7 +67,7 @@ async function createScheduledPush(playerId, sendAfterIso) {
       include_subscription_ids: [playerId],
       send_after: sendAfterIso,
       headings: { en: "Timer complete! ⏰" },
-      contents: { en: "Your Focusly study timer just finished. Nice work!" },
+      contents: { en: "Your timer is completed, please reset it." },
       data: { targetUrl: "/" },
       // Ensures the device actually vibrates/sounds on delivery, not just a
       // silent notification-center entry.
