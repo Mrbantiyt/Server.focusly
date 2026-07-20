@@ -1,7 +1,9 @@
 // src/hooks/useAchievements.js
 import { useEffect, useRef, useState } from "react";
 import { computeAchievementProgress, findNewlyEarnedAchievements } from "../lib/achievements";
+import { useMergedAchievements } from "../lib/achievementOverrides";
 import { unlockAchievements } from "../lib/firestore";
+import { notifyAchievementUnlocked } from "../lib/notifications";
 
 // Watches a gameStats-shaped snapshot (plus totalStudySeconds, computed at
 // the App level from history + todaySeconds) for achievements that have
@@ -26,24 +28,40 @@ import { unlockAchievements } from "../lib/firestore";
 export function useAchievements(uid, statsForProgress) {
   const [celebrationQueue, setCelebrationQueue] = useState([]);
   const firingRef = useRef(false);
+  // Merges in any admin-added/overridden achievements (image icon, custom
+  // metric/target, coin+XP reward) on top of the built-in catalog — see
+  // src/lib/achievementOverrides.js. Falls back to just the built-in list
+  // until the first Firestore snapshot lands.
+  const achievementList = useMergedAchievements();
 
-  const progress = computeAchievementProgress(statsForProgress, statsForProgress.unlockedAchievements || []);
+  const progress = computeAchievementProgress(statsForProgress, statsForProgress.unlockedAchievements || [], achievementList);
 
   useEffect(() => {
     if (!uid || !statsForProgress.loaded) return;
     if (firingRef.current) return;
 
-    const newlyEarned = findNewlyEarnedAchievements(statsForProgress, statsForProgress.unlockedAchievements || []);
+    const newlyEarned = findNewlyEarnedAchievements(statsForProgress, statsForProgress.unlockedAchievements || [], achievementList);
     if (newlyEarned.length === 0) return;
 
     firingRef.current = true;
-    const idsWithRewards = newlyEarned.map((a) => ({ id: a.id, reward: a.reward }));
+    const idsWithRewards = newlyEarned.map((a) => ({ id: a.id, reward: a.reward, xpReward: a.xpReward || 0 }));
     unlockAchievements(uid, idsWithRewards)
       .then((res) => {
         if (res?.newlyUnlocked?.length) {
           const unlockedSet = new Set(res.newlyUnlocked);
           const toCelebrate = newlyEarned.filter((a) => unlockedSet.has(a.id));
           setCelebrationQueue((q) => [...q, ...toCelebrate]);
+          // One notification per achievement that actually got unlocked
+          // this call (re-checked server-side inside the transaction, so
+          // this can't fire for an id someone else's session already
+          // unlocked). Each uses ITS OWN reward/xpReward as the credited
+          // amount — unlockAchievements only returns the batch's summed
+          // total, but every id here was paid in full (the transaction
+          // never partially pays one), so the per-achievement values are
+          // exactly what was credited for it.
+          toCelebrate.forEach((a) => {
+            notifyAchievementUnlocked(uid, a, { coinsAwarded: a.reward, xpAwarded: a.xpReward || 0 });
+          });
         }
       })
       .catch((err) => {
@@ -67,6 +85,7 @@ export function useAchievements(uid, statsForProgress) {
     statsForProgress.lifetimeCoinsEarned,
     JSON.stringify(statsForProgress.subjectSeconds || {}),
     JSON.stringify(statsForProgress.unlockedAchievements || []),
+    achievementList,
   ]);
 
   // Pops the oldest queued celebration off the front — call this from the
