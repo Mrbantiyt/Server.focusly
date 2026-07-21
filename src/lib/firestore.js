@@ -805,6 +805,15 @@ export function watchAppUpdateConfig(cb) {
   return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
 }
 
+// Same pattern as watchAppUpdateConfig above, for the admin-controlled
+// maintenance-mode screen (config/maintenance) — see App.jsx for how this
+// is combined with the signed-in user's admin claim to decide whether the
+// blocking maintenance screen actually shows.
+export function watchMaintenanceConfig(cb) {
+  const ref = doc(db, "config", "maintenance");
+  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+}
+
 /* --------------------------------- usernames ------------------------------------ */
 // A separate `usernames/{usernameLower}` collection is used as a reservation
 // table so we can atomically guarantee no two users ever hold the same
