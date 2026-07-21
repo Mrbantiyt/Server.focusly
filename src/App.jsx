@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
-import { COL, neu, LIQUID_BG_STYLE } from "./theme";
+import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useSubjectTimer } from "./hooks/useSubjectTimer";
@@ -220,6 +220,16 @@ export default function App() {
   // the full merge logic — this mirrors it at the App level so a custom
   // mascot the user has set as active resolves correctly here too, not
   // just inside the Store panel itself).
+  // Keeps the local cache theme.js reads (synchronously, at next boot)
+  // aligned with whatever the user last equipped in the Store. Per product
+  // decision this does NOT change anything on screen right now — theme.js
+  // already resolved ACTIVE_THEME once, at module load, before this ever
+  // runs — it only affects what the app looks like the NEXT time it starts.
+  useEffect(() => {
+    if (!gameStats.loaded) return;
+    cacheActiveTheme(gameStats.activeTheme);
+  }, [gameStats.loaded, gameStats.activeTheme]);
+
   const allStoreItems = useAllStoreItems(STORE_ITEMS);
   const activeMascotItem = allStoreItems.find((it) => it.id === gameStats.activeMascot);
   const mascotSrc = activeMascotItem?.img || "/mascot-logo.png";
@@ -463,6 +473,8 @@ export default function App() {
           coins={gameStats.coins}
           ownedItems={gameStats.ownedItems}
           activeMascot={gameStats.activeMascot}
+          ownedThemes={gameStats.ownedThemes}
+          activeTheme={gameStats.activeTheme}
           onClose={() => setShowStore(false)}
         />
       )}
