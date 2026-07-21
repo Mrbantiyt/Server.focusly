@@ -39,7 +39,7 @@ const BLACK_PACK = [
 // product decision — only take visual effect after the app is restarted,
 // so they get their own purchase/equip handling below rather than sharing
 // the mascot buy/equip flow.
-const THEME_PACK = [
+export const THEME_PACK = [
   { id: "liquidGlass", name: "Glassmorphism", img: "/store/theme-liquid-glass.png", price: 50000 },
   { id: "neomorphism", name: "Neomorphism", img: "/store/theme-neomorphism.png", price: 50000 },
 ];

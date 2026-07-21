@@ -11,12 +11,12 @@ import {
   Trophy, Mail,
 } from "lucide-react";
 import * as Icons from "lucide-react";
-import { COL, neu } from "../theme";
+import { COL, neu, cacheActiveTheme } from "../theme";
 import { fmtHrs, fmtCompact, getWeekStartKey, dayKeyFor } from "../lib/time";
-import { updateUserProfile, claimUsername, setActiveMascot, redeemCode, isStreakRestoreEligible } from "../lib/firestore";
+import { updateUserProfile, claimUsername, setActiveMascot, setActiveTheme, redeemCode, isStreakRestoreEligible } from "../lib/firestore";
 import { getEffectivePlan, getAiMessageLimit, getDaysRemaining, PLAN, PLAN_LABELS, XP_PER_TICK_BY_PLAN, COINS_PER_MINUTE_BY_PLAN } from "../lib/billing";
 import { auth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "../firebase";
-import { STORE_ITEMS } from "./Store";
+import { STORE_ITEMS, THEME_PACK } from "./Store";
 import { useAllStoreItems } from "../lib/storeOverrides";
 import { LeaderboardPanel } from "./Leaderboard";
 
@@ -308,7 +308,7 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
 
 /* --------------------------------- Customize --------------------------------- */
 
-function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
+function CustomizePanel({ uid, ownedItems, activeMascot, ownedThemes, activeTheme, onBack }) {
   const owned = ownedItems || [];
   const allItems = useAllStoreItems(STORE_ITEMS);
   const collection = allItems.filter((it) => owned.includes(it.id));
@@ -316,6 +316,27 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
   const handleEquip = async (itemId) => {
     if (!uid) return;
     await setActiveMascot(uid, itemId);
+  };
+
+  // ---- Whole-app themes ----
+  const ownedThemeIds = ownedThemes || [];
+  const currentTheme = activeTheme || "default";
+  // Local "just switched, needs restart" flag — same pattern as the
+  // Store's theme equip flow, so tapping a theme here shows a "Reload now"
+  // confirmation instead of silently doing nothing visible (the theme only
+  // takes effect on next app load/restart, see theme.js).
+  const [justEquippedTheme, setJustEquippedTheme] = useState(null);
+
+  const themeOptions = [
+    { id: "default", name: "Default", img: null },
+    ...THEME_PACK.filter((t) => ownedThemeIds.includes(t.id)),
+  ];
+
+  const handleEquipTheme = async (themeId) => {
+    if (!uid) return;
+    cacheActiveTheme(themeId);
+    await setActiveTheme(uid, themeId);
+    setJustEquippedTheme(themeId);
   };
 
   return (
@@ -359,6 +380,55 @@ function CustomizePanel({ uid, ownedItems, activeMascot, onBack }) {
           })}
         </div>
       )}
+
+      <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>App theme</div>
+      <div className="font-body text-xs -mt-3" style={{ color: COL.sub }}>
+        Restyles the whole app. From the themes you've bought in the Store, plus the free Default look.
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {themeOptions.map((theme) => {
+          const isActive = currentTheme === theme.id;
+          return (
+            <div key={theme.id} className="flex flex-col gap-1">
+              <button
+                onClick={() => handleEquipTheme(theme.id)}
+                style={neu(false, 18)}
+                className="flex items-center gap-3 p-2.5 active:scale-95 transition"
+              >
+                {theme.img ? (
+                  <img src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+                ) : (
+                  <div
+                    className="w-10 h-10 rounded-xl flex-shrink-0"
+                    style={{ ...neu(true, 12), background: COL.bg }}
+                  />
+                )}
+                <span className="flex-1 text-left font-display font-semibold text-xs" style={{ color: COL.ink }}>
+                  {theme.name}
+                </span>
+                <span className="font-body text-[10px] flex-shrink-0" style={{ color: isActive ? COL.violet : COL.sub }}>
+                  {isActive ? "In use" : "Use"}
+                </span>
+              </button>
+              {justEquippedTheme === theme.id && (
+                <div className="flex items-center justify-between gap-2 px-2.5">
+                  <span className="font-body text-[10px]" style={{ color: COL.gold }}>
+                    Restart Focusly to apply this theme.
+                  </span>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="flex-shrink-0 px-2.5 py-1 rounded-full font-display font-bold text-[10px] active:scale-95 transition"
+                    style={{ background: COL.violet, color: "#fff" }}
+                  >
+                    Reload now
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1046,12 +1116,12 @@ function ChangeEmailPanel({ user, requestEmailChange, confirmEmailChange, onBack
 
 
 
-export default function Settings({ user, pushStatus, oneSignalUserId = null, onRefreshPushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, billing, lastStreakDay = null, onOpenStreak, achievements = [], studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
+export default function Settings({ user, pushStatus, oneSignalUserId = null, onRefreshPushStatus, tasks, taskStats, todaySeconds, totalStudySeconds, history, dayKey, coins = 0, streak = 0, level = 1, ownedItems, activeMascot, ownedThemes, activeTheme, billing, lastStreakDay = null, onOpenStreak, achievements = [], studyReminder, isMedianApp = false, initialSection = null, onLogout, myLeaderboardRank, leaderboardRows, leaderboardLoading, requestEmailChange, confirmEmailChange }) {
   const [section, setSection] = useState(initialSection); // null = main menu
 
   if (section === "account") return <AccountSettingsPanel user={user} ownedItems={ownedItems} onBack={() => setSection(null)} />;
   if (section === "billing") return <BillingPanel uid={user.uid} billing={billing} onBack={() => setSection(null)} />;
-  if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} onBack={() => setSection(null)} />;
+  if (section === "customize") return <CustomizePanel uid={user.uid} ownedItems={ownedItems} activeMascot={activeMascot} ownedThemes={ownedThemes} activeTheme={activeTheme} onBack={() => setSection(null)} />;
   if (section === "notifications") {
     return (
       <NotificationsPanel
