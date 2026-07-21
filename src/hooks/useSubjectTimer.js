@@ -28,6 +28,15 @@ import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timer
 // Persistence follows the same localStorage-mirror pattern as
 // useCountdownTimer, so a background/reload doesn't lose progress or
 // silently reset the running plan.
+//
+// Like useCountdownTimer, the countdown is anchored to an absolute
+// wall-clock end timestamp (endAtRef) instead of decrementing remainingRef
+// by 1 on every setInterval firing. A throttled/backgrounded tab doesn't
+// fire its interval reliably once per second, so trusting tick-count alone
+// makes the countdown fall behind real elapsed time — anchoring to
+// Date.now() + remaining*1000 means every tick (however late) recomputes
+// the correct remaining time instead of accumulating drift. See the longer
+// explanation in useCountdownTimer.js.
 const STORAGE_KEY_PREFIX = "focusly:subjectTimerState:";
 const COMPLETE_CHIME_MS = 5000; // "5 sec sound" between-subject / final chime
 
@@ -72,6 +81,24 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const chimeTimeoutRef = useRef(null);
   const chimeIntervalRef = useRef(null);
 
+  // Absolute wall-clock timestamp (ms) the ACTIVE subject's countdown is
+  // aiming at — Date.now() + remaining*1000. null when paused. remainingRef
+  // is just a display cache recomputed from this every tick; see the file
+  // header comment for why. Falls back to reconstructing from `remaining`
+  // for state saved before this field existed.
+  const endAtRef = useRef(
+    persisted?.running
+      ? (persisted?.endAt ?? Date.now() + (persisted?.remaining ?? 0) * 1000)
+      : null
+  );
+
+  const syncRemainingFromClock = () => {
+    if (!runningRef.current || !endAtRef.current) return remainingRef.current;
+    const fresh = Math.max(0, Math.round((endAtRef.current - Date.now()) / 1000));
+    remainingRef.current = fresh;
+    return fresh;
+  };
+
   // Per-subject seconds accumulated locally since the last Firestore flush,
   // bucketed by day so a session that happens to cross midnight still
   // credits each day's own subjectDays doc correctly:
@@ -106,6 +133,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       activeIndex: activeIndexRef.current,
       remaining: remainingRef.current,
       running: runningRef.current,
+      endAt: endAtRef.current,
     });
   };
 
@@ -149,10 +177,11 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setActiveIndex(0);
     const firstRemaining = cleaned[0]?.totalSeconds ?? 0;
     remainingRef.current = firstRemaining;
+    endAtRef.current = null; // only settable while stopped, so there's no running end target to update
     setRemaining(firstRemaining);
     setFinished(false);
     stopChime();
-    persistState(uid, { dayKey, plan: cleaned, activeIndex: 0, remaining: firstRemaining, running: false });
+    persistState(uid, { dayKey, plan: cleaned, activeIndex: 0, remaining: firstRemaining, running: false, endAt: null });
   };
 
   const start = () => {
@@ -161,6 +190,9 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Anchor to an absolute end timestamp for the active subject — makes
+    // the countdown immune to throttled/late ticks while backgrounded.
+    endAtRef.current = Date.now() + remainingRef.current * 1000;
     // Push should only fire once the WHOLE plan is done, not the current
     // subject — so schedule it `secondsLeftInWholePlan` seconds out (time
     // left on the active subject + every subject still queued after it).
@@ -172,8 +204,25 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   };
 
   const pause = () => {
+    // Resync from the wall clock before freezing, so a pause landing
+    // between ticks doesn't drop the last fraction of elapsed time from
+    // either the countdown face or the per-subject Firestore bucket.
+    const before = remainingRef.current;
+    const after = syncRemainingFromClock();
+    const elapsed = before - after;
+    if (elapsed > 0) {
+      setRemaining(after);
+      onElapsedSecond?.(elapsed);
+      const activeName = planRef.current[activeIndexRef.current]?.name;
+      if (activeName) {
+        const key = dayKeyFor(new Date());
+        const dayBucket = pendingSubjectSecondsRef.current[key] || (pendingSubjectSecondsRef.current[key] = {});
+        dayBucket[activeName] = (dayBucket[activeName] || 0) + elapsed;
+      }
+    }
     runningRef.current = false;
     setRunning(false);
+    endAtRef.current = null;
     // Countdown stopped early — cancel the pending push so it doesn't fire
     // later for a plan that's no longer running.
     cancelTimerNotification();
@@ -187,6 +236,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const reset = () => {
     runningRef.current = false;
     setRunning(false);
+    endAtRef.current = null;
     activeIndexRef.current = 0;
     setActiveIndex(0);
     const firstRemaining = planRef.current[0]?.totalSeconds ?? 0;
@@ -203,6 +253,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const clearPlan = () => {
     runningRef.current = false;
     setRunning(false);
+    endAtRef.current = null;
     planRef.current = [];
     setPlan([]);
     activeIndexRef.current = 0;
@@ -212,68 +263,114 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     stopChime();
     cancelTimerNotification();
-    persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false });
+    persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false, endAt: null });
     flushPendingSubjectSeconds();
   };
 
-  // The 1-second countdown tick.
+  // Credits `sec` elapsed seconds to both the overall "Time today" total and
+  // the active subject's per-subject bucket. Pulled out of the tick loop so
+  // it can be called with more than 1 second at once — needed because a
+  // throttled/backgrounded gap can mean many real seconds passed between
+  // two tick firings.
+  const creditElapsedToActiveSubject = (sec, key) => {
+    if (sec <= 0) return;
+    onElapsedSecond?.(sec);
+    const activeName = planRef.current[activeIndexRef.current]?.name;
+    if (activeName) {
+      const dayBucket = pendingSubjectSecondsRef.current[key] || (pendingSubjectSecondsRef.current[key] = {});
+      dayBucket[activeName] = (dayBucket[activeName] || 0) + sec;
+    }
+  };
+
+  // The countdown tick for the active subject. Anchored to endAtRef (an
+  // absolute wall-clock timestamp) rather than trusting the interval to
+  // fire once per second — see the file header comment. Because a
+  // throttled gap can be long enough to blow past the CURRENT subject's
+  // remaining time entirely, this resync can advance through several
+  // finished subjects in one go, crediting each its own correct share of
+  // the elapsed time, rather than assuming at most one subject completes
+  // per tick.
+  const tick = () => {
+    const key = dayKeyFor(new Date());
+    if (key !== dayKey) { setDayKey(key); return; }
+
+    if (!runningRef.current || !endAtRef.current) return;
+    if (!planRef.current.length) return;
+
+    let now = Date.now();
+    // Loop in case the elapsed wall-clock time is enough to finish more
+    // than one subject at once (e.g. the app was backgrounded through two
+    // short subjects' worth of time).
+    while (true) {
+      const before = remainingRef.current;
+      const after = Math.max(0, Math.round((endAtRef.current - now) / 1000));
+      const elapsed = before - after;
+      if (elapsed > 0) {
+        remainingRef.current = after;
+        creditElapsedToActiveSubject(elapsed, key);
+      }
+
+      if (after > 0) {
+        setRemaining(after);
+        break; // still time left on the active subject — done for this tick
+      }
+
+      // Active subject just finished.
+      const isLastSubject = activeIndexRef.current >= planRef.current.length - 1;
+      if (isLastSubject) {
+        runningRef.current = false;
+        setRunning(false);
+        setFinished(true);
+        setRemaining(0);
+        endAtRef.current = null;
+        playFiveSecondChime();
+        flushPendingSubjectSeconds();
+        break;
+      }
+
+      // Auto-continue into the next subject, re-anchoring endAt from
+      // wherever "now" actually landed relative to when the previous
+      // subject's clock ran out (endAtRef, before this subject overwrites
+      // it), so a multi-subject overshoot doesn't lose or double-count the
+      // sliver of time between them.
+      playFiveSecondChime();
+      const overshootStart = endAtRef.current;
+      activeIndexRef.current += 1;
+      setActiveIndex(activeIndexRef.current);
+      const nextTotal = planRef.current[activeIndexRef.current]?.totalSeconds ?? 0;
+      endAtRef.current = overshootStart + nextTotal * 1000;
+      remainingRef.current = nextTotal;
+      // Loop again: `now` hasn't changed, so if the overshoot also blows
+      // past this next subject, the loop will detect that on the next
+      // pass and continue advancing.
+    }
+
+    persistState(uid, {
+      dayKey: key,
+      plan: planRef.current,
+      activeIndex: activeIndexRef.current,
+      remaining: remainingRef.current,
+      running: runningRef.current,
+      endAt: endAtRef.current,
+    });
+  };
+
   useEffect(() => {
-    const id = setInterval(() => {
-      const key = dayKeyFor(new Date());
-      if (key !== dayKey) { setDayKey(key); return; }
-
-      if (!runningRef.current) return;
-      if (!planRef.current.length) return;
-      if (remainingRef.current <= 0) return;
-
-      remainingRef.current -= 1;
-      setRemaining(remainingRef.current);
-
-      // Credits this elapsed second to the overall "Time today" total (per
-      // spec: total study time reflects all studying, however it was
-      // timed) — the Study Timer's own hook owns the throttled Firestore
-      // flush for that total.
-      onElapsedSecond?.(1);
-
-      // Also credits this second to the active subject's running total
-      // (flushed to Firestore on FLUSH_MS interval below), which feeds the
-      // Stats tab's "Time by Subject" breakdown and subject achievements.
-      const activeName = planRef.current[activeIndexRef.current]?.name;
-      if (activeName) {
-        const dayBucket = pendingSubjectSecondsRef.current[key] || (pendingSubjectSecondsRef.current[key] = {});
-        dayBucket[activeName] = (dayBucket[activeName] || 0) + 1;
-      }
-
-      if (remainingRef.current <= 0) {
-        const isLastSubject = activeIndexRef.current >= planRef.current.length - 1;
-        if (isLastSubject) {
-          // Whole plan complete — stop and chime, do NOT auto-reset.
-          runningRef.current = false;
-          setRunning(false);
-          setFinished(true);
-          playFiveSecondChime();
-          flushPendingSubjectSeconds();
-        } else {
-          // Auto-continue straight into the next subject.
-          playFiveSecondChime();
-          activeIndexRef.current += 1;
-          setActiveIndex(activeIndexRef.current);
-          const nextRemaining = planRef.current[activeIndexRef.current]?.totalSeconds ?? 0;
-          remainingRef.current = nextRemaining;
-          setRemaining(nextRemaining);
-        }
-      }
-
-      persistState(uid, {
-        dayKey: key,
-        plan: planRef.current,
-        activeIndex: activeIndexRef.current,
-        remaining: remainingRef.current,
-        running: runningRef.current,
-      });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 1000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayKey, uid]);
+
+  // Force an immediate resync the moment the app/tab is foregrounded again.
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, uid]);
 
   const activeSubject = plan[activeIndex] || null;

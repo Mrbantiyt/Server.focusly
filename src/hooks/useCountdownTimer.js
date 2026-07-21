@@ -13,13 +13,30 @@ import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timer
 // the same users/{uid}/studyDays/{dayKey} Firestore doc the old stopwatch
 // used, so history/leaderboard/graphs keep working unchanged.
 //
-// remainingRef.current is the source of truth for what's left on the clock,
-// in whole seconds. It only changes at well-defined moments (Start, Pause,
-// a finished tick, or Set Duration while paused) — never inferred from a
-// running wall-clock diff the way the old stopwatch did, which is what let
-// stray re-renders desync it. That's the whole reason this feels reliable:
-// there's exactly one place that mutates remainingRef.current outside the
-// 1s tick, and the 1s tick only ever counts down by exactly 1.
+// remainingRef.current is a CACHE, not the source of truth. The source of
+// truth is endAtRef.current — the absolute wall-clock timestamp (Date.now()
+// + remainingSeconds*1000) the countdown is aiming at. Every tick just
+// recomputes `remaining = round((endAt - Date.now()) / 1000)` instead of
+// decrementing by 1.
+//
+// THE BUG THIS FIXES: the previous version decremented remainingRef by
+// exactly 1 every time the setInterval callback fired, trusting that the
+// callback fires once per real second. On a backgrounded tab / screen-off
+// phone, browsers and mobile OSes throttle timers heavily (Chrome can drop
+// a background tab's interval to ~once/minute; some WebViews suspend it
+// almost entirely). The interval doesn't fire more often to catch up — it
+// just fires late. So each late firing still only subtracted 1 second, and
+// the on-screen countdown fell further and further behind real elapsed
+// time. That's the "background/screen-off timer runs but isn't accurate"
+// symptom.
+//
+// Anchoring to an absolute end timestamp fixes this completely: whenever
+// the tick DOES fire — whether that's 1s or 90s after the last one — it
+// recomputes remaining from Date.now(), so it's instantly correct no
+// matter how throttled the interval was. A visibility-change handler also
+// forces an immediate recompute + finish-check the moment the app is
+// foregrounded again, so the countdown never sits stale until the next
+// throttled tick happens to land.
 //
 // PERSISTENCE ACROSS BACKGROUND/RELOAD: on a native-wrapped app (Median),
 // backgrounding the app or the OS reclaiming the WebView can interrupt or
@@ -32,12 +49,15 @@ import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timer
 //   2. "Time today" was only saved to Firestore periodically (every 5s) —
 //      any seconds ticked since the last flush were gone if the app died
 //      before the next one.
-// Fix: the full timer state (remaining/running/durationSeconds/bankedToday)
-// is mirrored to localStorage on every tick and restored on mount, and the
-// Firestore flush interval is now 2s instead of 5s to shrink the loss
-// window for the "Time today" total specifically (localStorage covers the
-// gap between flushes; the flush interval only bounds how stale the
-// *server-side* copy can get before the next save).
+// Fix: the full timer state (remaining/running/durationSeconds/bankedToday/
+// endAt) is mirrored to localStorage on every tick and restored on mount —
+// endAt in particular means a reload mid-countdown recomputes the correct
+// remaining time immediately from the restored absolute timestamp, instead
+// of resuming a stale tick-count from before the reload. The Firestore
+// flush interval is 2s to shrink the loss window for the "Time today" total
+// specifically (localStorage covers the gap between flushes; the flush
+// interval only bounds how stale the *server-side* copy can get before the
+// next save).
 const STORAGE_KEY_PREFIX = "focusly:timerState:";
 
 function loadPersistedState(uid) {
@@ -78,6 +98,29 @@ export function useCountdownTimer(uid) {
   const remainingRef = useRef(persisted?.remaining ?? persisted?.durationSeconds ?? 25 * 60);
   const runningRef = useRef(persisted?.running || false);
   const bankedTodayRef = useRef(persisted?.bankedToday || 0); // last-known-good "Time today" total (seconds), never moves backward from a stale remote value
+
+  // Absolute wall-clock timestamp the countdown is aiming at, in ms
+  // (Date.now() + remaining*1000). null when paused/not running. This is
+  // the real source of truth for "how much time is left" — remainingRef is
+  // just a display cache recomputed from this on every tick. Restored from
+  // localStorage on mount so a reload while running doesn't lose the
+  // original target time.
+  const endAtRef = useRef(
+    persisted?.running
+      ? (persisted?.endAt ?? Date.now() + (persisted?.remaining ?? 0) * 1000) // fallback for state saved before this fix, which had no endAt field yet
+      : null
+  );
+
+  // Recomputes remainingRef/setRemaining from the wall clock right now, if
+  // running. Returns the fresh remaining value (or remainingRef.current
+  // unchanged if not running). Call this instead of touching remainingRef
+  // directly whenever "how much time is left" needs to be current.
+  const syncRemainingFromClock = () => {
+    if (!runningRef.current || !endAtRef.current) return remainingRef.current;
+    const fresh = Math.max(0, Math.round((endAtRef.current - Date.now()) / 1000));
+    remainingRef.current = fresh;
+    return fresh;
+  };
 
   useEffect(() => { runningRef.current = running; }, [running]);
 
@@ -196,44 +239,71 @@ export function useCountdownTimer(uid) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, dayKey]);
 
-  // The 1-second countdown tick.
+  // The countdown tick. Runs every ~1s while foregrounded, but — unlike a
+  // naive decrement-by-1 — it's safe to fire late or be skipped for a
+  // while (backgrounded tab, screen off) because it always recomputes
+  // "how much time is actually left" from endAtRef (an absolute wall-clock
+  // timestamp) rather than trusting the interval's own cadence.
+  const tick = () => {
+    const key = dayKeyFor(new Date());
+    if (key !== dayKey) { setDayKey(key); return; } // fresh day: let the load effect above pick up the new doc
+
+    if (!runningRef.current || !endAtRef.current) return;
+
+    const before = remainingRef.current;
+    const after = syncRemainingFromClock();
+    const elapsed = before - after; // however many real seconds actually passed since the last sync — often 1, but can be many after a throttled gap
+    if (elapsed > 0) {
+      setRemaining(after);
+      bankSeconds(elapsed); // credit the real elapsed time to "Time today", not just 1s, so a throttled background gap is never silently lost
+    }
+
+    if (after <= 0) {
+      runningRef.current = false;
+      setRunning(false);
+      setFinished(true);
+      endAtRef.current = null;
+      // The countdown reached 0 naturally — the scheduled push (if any)
+      // is about to fire on its own from the server side; nothing to
+      // cancel here. If it was somehow already delivered early or lost,
+      // that's a rare edge case the in-app alert loop below still covers
+      // while the app is open.
+    }
+
+    // Mirror the full timer state to localStorage every tick, so a
+    // background/reload interruption resumes from here instead of
+    // resetting the visible countdown and losing whatever hasn't reached
+    // Firestore yet. See the big comment at the top of this file.
+    persistState(uid, {
+      dayKey,
+      running: runningRef.current,
+      durationSeconds,
+      remaining: remainingRef.current,
+      bankedToday: bankedTodayRef.current,
+      endAt: endAtRef.current,
+    });
+  };
+
   useEffect(() => {
-    const id = setInterval(() => {
-      const key = dayKeyFor(new Date());
-      if (key !== dayKey) { setDayKey(key); return; } // fresh day: let the load effect above pick up the new doc
-
-      if (!runningRef.current) return;
-      if (remainingRef.current <= 0) return;
-
-      remainingRef.current -= 1;
-      setRemaining(remainingRef.current);
-      bankSeconds(1); // credit this elapsed second to "Time today" right away, so pausing never loses progress
-
-      if (remainingRef.current <= 0) {
-        runningRef.current = false;
-        setRunning(false);
-        setFinished(true);
-        // The countdown reached 0 naturally — the scheduled push (if any)
-        // is about to fire on its own from the server side; nothing to
-        // cancel here. If it was somehow already delivered early or lost,
-        // that's a rare edge case the in-app alert loop below still covers
-        // while the app is open.
-      }
-
-      // Mirror the full timer state to localStorage every tick, so a
-      // background/reload interruption resumes from here instead of
-      // resetting the visible countdown and losing whatever hasn't reached
-      // Firestore yet. See the big comment at the top of this file.
-      persistState(uid, {
-        dayKey,
-        running: runningRef.current,
-        durationSeconds,
-        remaining: remainingRef.current,
-        bankedToday: bankedTodayRef.current,
-      });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, 1000);
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayKey, uid, durationSeconds]);
+
+  // Force an immediate resync the moment the app/tab is foregrounded again,
+  // instead of waiting for the next (possibly still-throttled-for-a-moment)
+  // interval tick. This is what makes "screen off, then back on" show the
+  // correct remaining time instantly rather than a stale number that only
+  // catches up a second later.
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "visible") tick(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayKey, uid, durationSeconds]);
 
   // Snapshot current state to localStorage right now (not waiting for the
@@ -245,6 +315,7 @@ export function useCountdownTimer(uid) {
       durationSeconds,
       remaining: remainingRef.current,
       bankedToday: bankedTodayRef.current,
+      endAt: endAtRef.current,
     });
   };
 
@@ -255,9 +326,10 @@ export function useCountdownTimer(uid) {
     const clamped = Math.max(0, Math.floor(totalSeconds));
     setDurationSeconds(clamped);
     remainingRef.current = clamped;
+    endAtRef.current = null; // only settable while paused, so there's no running end target to update
     setRemaining(clamped);
     setFinished(false);
-    persistState(uid, { dayKey, running: false, durationSeconds: clamped, remaining: clamped, bankedToday: bankedTodayRef.current });
+    persistState(uid, { dayKey, running: false, durationSeconds: clamped, remaining: clamped, bankedToday: bankedTodayRef.current, endAt: null });
   };
 
   const start = () => {
@@ -265,6 +337,10 @@ export function useCountdownTimer(uid) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Anchor the countdown to an absolute end timestamp based on however
+    // much time is left right now — this is what makes the countdown
+    // immune to throttled/late ticks while backgrounded.
+    endAtRef.current = Date.now() + remainingRef.current * 1000;
     // Ask the server to push a "timer complete" notification after however
     // many seconds are left right now, so the alert still reaches the user
     // if they background or close the app before it finishes.
@@ -273,8 +349,18 @@ export function useCountdownTimer(uid) {
   };
 
   const pause = () => {
+    // Bank whatever's actually elapsed since the last tick, up to this
+    // exact moment, before freezing the clock — otherwise a pause that
+    // lands between ticks would silently drop up to ~1s (or more, if the
+    // last tick was itself delayed) of genuinely-elapsed time.
+    const before = remainingRef.current;
+    const after = syncRemainingFromClock();
+    const elapsed = before - after;
+    if (elapsed > 0) bankSeconds(elapsed);
+    setRemaining(after);
     runningRef.current = false;
     setRunning(false);
+    endAtRef.current = null;
     // Countdown stopped early — cancel the pending push so it doesn't fire
     // later for a timer that's no longer counting down.
     cancelTimerNotification();
@@ -295,6 +381,7 @@ export function useCountdownTimer(uid) {
   const reset = () => {
     runningRef.current = false;
     setRunning(false);
+    endAtRef.current = null;
     remainingRef.current = durationSeconds;
     setRemaining(durationSeconds);
     setFinished(false);
