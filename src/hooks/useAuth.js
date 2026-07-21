@@ -28,11 +28,29 @@ async function callWithAuth(path, body) {
 export function useAuth() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Whether the signed-in account carries the `admin: true` Firebase Auth
+  // custom claim — the SAME claim the separate admin panel requires to sign
+  // in there (see that project's lib/requireAdmin.js and
+  // scripts/set-admin-claim.js). Used here only to let an admin account
+  // bypass the maintenance-mode screen (see MaintenanceScreen / App.jsx) —
+  // there's no separate "make me exempt from maintenance" flow, it's just
+  // whether this account already has admin access or not.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
+      if (u) {
+        // Fire-and-forget: doesn't block sign-in on this resolving, since
+        // the vast majority of accounts aren't admins and the maintenance
+        // screen (the only thing this gates) isn't shown by default anyway.
+        u.getIdTokenResult()
+          .then((res) => setIsAdmin(res.claims.admin === true))
+          .catch(() => setIsAdmin(false));
+      } else {
+        setIsAdmin(false);
+      }
       // Fire-and-forget: fixes any username reservation left with a
       // missing/null email by an older buggy build. Safe to run on every
       // sign-in — it's a no-op once the doc is already correct.
@@ -136,7 +154,7 @@ export function useAuth() {
   };
 
   return {
-    user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp,
+    user, loading, isAdmin, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp,
     requestEmailChange, confirmEmailChange,
   };
 }
