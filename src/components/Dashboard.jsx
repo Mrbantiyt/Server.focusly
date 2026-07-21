@@ -2,7 +2,8 @@
 import React from "react";
 import { Bell, Sparkles, LogOut } from "lucide-react";
 import { COL, neu } from "../theme";
-import { fmtHrs } from "../lib/time";
+import { fmtHrs, fmtLiveClock } from "../lib/time";
+import { useLiveClock } from "../hooks/useLiveClock";
 import { StatCard } from "./StopwatchCard";
 import { TimerCard } from "./TimerCard";
 import { SubjectTimerCard } from "./SubjectTimerCard";
@@ -41,6 +42,7 @@ export default function Dashboard({
 }) {
   const name = user.displayName || "Student";
   const greeting = getGreeting();
+  const liveClock = useLiveClock();
 
   return (
     <div className="flex flex-col gap-5">
@@ -57,6 +59,7 @@ export default function Dashboard({
           <div>
             <div className="font-body text-xs" style={{ color: COL.sub }}>{greeting}</div>
             <div className="font-display font-semibold text-base" style={{ color: COL.ink }}>{name}</div>
+            <div className="font-body text-[11px] tabular-nums" style={{ color: COL.sub }}>{fmtLiveClock(liveClock)}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
