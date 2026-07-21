@@ -300,6 +300,12 @@ export function watchGameStats(uid, cb) {
       streakDays: d.streakDays || {},
       ownedItems: d.ownedItems || [],
       activeMascot: d.activeMascot || "default",
+      // UI themes (Glass/Neomorphism) — separate from mascot ownership
+      // above since a theme changes the whole app's surfaces, not just an
+      // icon, and (per product decision) only takes visual effect on the
+      // next app restart rather than instantly. See theme.js.
+      ownedThemes: d.ownedThemes || [],
+      activeTheme: d.activeTheme || "default",
       // Lifetime task counters. These survive the daily midnight task wipe
       // (see runMidnightTaskReset below) — the live `tasks` collection only
       // ever holds *today's* tasks, so "Total tasks" in Settings has to
@@ -721,6 +727,48 @@ export async function purchaseItem(uid, itemId, cost) {
 export async function setActiveMascot(uid, itemId) {
   const ref = doc(db, "users", uid);
   await setDoc(ref, { activeMascot: itemId }, { merge: true });
+}
+
+/* ------------------------------------ themes ------------------------------------- */
+
+// Buys a whole-app UI theme (e.g. "liquidGlass"/"neomorphism") for `cost`
+// coins and adds it to users/{uid}.ownedThemes. Mirrors purchaseItem's
+// transaction-safety (same double-tap/multi-tab double-spend concern), but
+// deliberately does NOT also equip the theme on purchase the way mascots
+// auto-equip — a theme change only takes visual effect on next restart, so
+// silently switching what a user's app will look like on their next reload,
+// as a side effect of a purchase tap, would be a bad surprise. Equipping is
+// a separate explicit step (setActiveTheme) from the Store's "My Themes"
+// collection.
+export async function purchaseTheme(uid, themeId, cost) {
+  const ref = doc(db, "users", uid);
+
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const d = snap.exists() ? snap.data() : {};
+    const owned = d.ownedThemes || [];
+
+    if (owned.includes(themeId)) return { ok: false, reason: "already-owned" };
+
+    const coins = d.coins || 0;
+    if (coins < cost) return { ok: false, reason: "not-enough-coins" };
+
+    tx.set(ref, {
+      coins: coins - cost,
+      ownedThemes: [...owned, themeId],
+    }, { merge: true });
+
+    return { ok: true };
+  });
+}
+
+// Sets which owned theme is equipped. Per product decision this does NOT
+// take effect until the user restarts/reloads the app — theme.js resolves
+// the actual active theme once at boot from a local cache that App.jsx
+// keeps in sync with this Firestore field (see cacheActiveTheme).
+export async function setActiveTheme(uid, themeId) {
+  const ref = doc(db, "users", uid);
+  await setDoc(ref, { activeTheme: themeId }, { merge: true });
 }
 
 /* ---------------------------------- profile ------------------------------------ */
