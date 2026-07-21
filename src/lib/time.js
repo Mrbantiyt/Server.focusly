@@ -21,6 +21,24 @@ export function fmtHMS(totalSeconds) {
   return `${h}:${m}:${sec}`;
 }
 
+// Formats a Date as "21 Jul, 01:33:01 PM" — the live wall-clock shown under
+// the user's name on the dashboard. Always reflects the DEVICE's real local
+// time (whatever timezone the phone is set to), not app/session state.
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+export function fmtLiveClock(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const day = d.getDate();
+  const month = MONTH_ABBR[d.getMonth()];
+  let h = d.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  const hh = String(h).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${day} ${month}, ${hh}:${mm}:${ss} ${ampm}`;
+}
+
 export function fmtHrs(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
   if (s < 60) return `${s}s`; // show seconds directly instead of always rounding down to "0m"
