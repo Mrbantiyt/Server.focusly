@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
-import { COL, neu } from "./theme";
+import { COL, neu, LIQUID_BG_STYLE } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useSubjectTimer } from "./hooks/useSubjectTimer";
@@ -303,10 +303,10 @@ export default function App() {
   }, [user?.uid]);
 
   return (
-    <div className="w-full flex items-center justify-center" style={{ background: COL.bg, minHeight: "100dvh" }}>
+    <div className="w-full flex items-center justify-center" style={{ ...LIQUID_BG_STYLE, minHeight: "100dvh" }}>
       {FONT}
       <div className="w-full flex flex-col"
-        style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", background: COL.bg }}>
+        style={{ height: "100dvh", maxWidth: 480, margin: "0 auto", ...LIQUID_BG_STYLE, backgroundAttachment: "fixed" }}>
 
         {loading ? (
           <AppLoadingSkeleton />
