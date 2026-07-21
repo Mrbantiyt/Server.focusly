@@ -1,8 +1,8 @@
 // src/components/Store.jsx
 import React, { useEffect, useState } from "react";
 import { X, Check } from "lucide-react";
-import { COL, neu } from "../theme";
-import { purchaseItem, setActiveMascot } from "../lib/firestore";
+import { COL, neu, cacheActiveTheme } from "../theme";
+import { purchaseItem, setActiveMascot, purchaseTheme, setActiveTheme } from "../lib/firestore";
 import { fmtCompact } from "../lib/time";
 import { watchStoreOverrides, applyStoreOverrides } from "../lib/storeOverrides";
 import StoreIntroAnimation from "./StoreIntroAnimation";
@@ -34,6 +34,16 @@ const BLACK_PACK = [
   { id: "black-yinyang", name: "Serpent Balance", img: "/store/black-yinyang.png", price: 500 },
 ];
 
+// Whole-app UI themes. Separate from the mascot packs above: these swap
+// every card/surface in the app (see theme.js), cost a lot more, and — per
+// product decision — only take visual effect after the app is restarted,
+// so they get their own purchase/equip handling below rather than sharing
+// the mascot buy/equip flow.
+const THEME_PACK = [
+  { id: "liquidGlass", name: "Glassmorphism", img: "/store/theme-liquid-glass.png", price: 50000 },
+  { id: "neomorphism", name: "Neomorphism", img: "/store/theme-neomorphism.png", price: 50000 },
+];
+
 // Flat lookup of the hardcoded (built-in) items only — used at first paint
 // (App.jsx resolving the active mascot image) before any admin overrides
 // have loaded. May have stale name/price if an admin edited those, but the
@@ -56,7 +66,7 @@ function CoinPill({ value }) {
   );
 }
 
-export default function Store({ uid, coins, ownedItems, activeMascot, onClose }) {
+export default function Store({ uid, coins, ownedItems, activeMascot, ownedThemes, activeTheme, onClose }) {
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState(null);
   const [packs, setPacks] = useState(BASE_PACKS);
@@ -109,6 +119,42 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
   }
 
   const collection = allItems.filter((it) => displayOwned.includes(it.id));
+
+  // ---- Whole-app themes (separate bookkeeping from mascots — see THEME_PACK) ----
+  const ownedThemeIds = ownedThemes || [];
+  const [busyThemeId, setBusyThemeId] = useState(null);
+  const [themeError, setThemeError] = useState(null);
+  // Same optimistic-ownership pattern as mascots (purchaseTheme also uses
+  // runTransaction, so it doesn't get Firestore's local-cache optimistic
+  // playback either) plus a one-off "pending equip" flag so tapping
+  // "Use" on a theme can show a "Restart to apply" confirmation instead of
+  // silently doing nothing visible.
+  const [optimisticOwnedThemes, setOptimisticOwnedThemes] = useState([]);
+  const [justEquippedTheme, setJustEquippedTheme] = useState(null);
+  const displayOwnedThemes = [...ownedThemeIds, ...optimisticOwnedThemes.filter((id) => !ownedThemeIds.includes(id))];
+
+  async function handleBuyTheme(theme) {
+    if (!uid || busyThemeId) return;
+    setThemeError(null);
+    setBusyThemeId(theme.id);
+    setOptimisticOwnedThemes((prev) => [...prev, theme.id]);
+    const res = await purchaseTheme(uid, theme.id, theme.price);
+    setBusyThemeId(null);
+    if (!res.ok) {
+      setOptimisticOwnedThemes((prev) => prev.filter((id) => id !== theme.id));
+      setThemeError(res.reason === "not-enough-coins" ? "Not enough coins" : "Something went wrong");
+    }
+  }
+
+  async function handleEquipTheme(themeId) {
+    if (!uid) return;
+    // Cache immediately (don't wait for the Firestore write to round-trip
+    // back through App.jsx's snapshot-driven effect) so "Reload now" is
+    // instant and correct even on a slow connection.
+    cacheActiveTheme(themeId);
+    await setActiveTheme(uid, themeId);
+    setJustEquippedTheme(themeId);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(20,18,40,0.55)" }}>
@@ -202,6 +248,97 @@ export default function Store({ uid, coins, ownedItems, activeMascot, onClose })
             )}
           </div>
         ))}
+
+        <div className="mb-6">
+          <div className="font-display font-semibold text-base mb-1" style={{ color: COL.ink }}>
+            App Themes
+          </div>
+          <div className="font-body text-[11px] mb-3" style={{ color: COL.sub }}>
+            Restyles the whole app. Applies after you restart Focusly.
+          </div>
+
+          {themeError && (
+            <div className="mb-3 px-3 py-2 rounded-xl font-body text-xs text-center" style={{ background: "rgba(255,122,133,0.15)", color: COL.coral }}>
+              {themeError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            {THEME_PACK.map((theme) => {
+              const isOwned = displayOwnedThemes.includes(theme.id);
+              const isBusy = busyThemeId === theme.id;
+              return (
+                <div key={theme.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
+                  <img src={theme.img} alt={theme.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
+                  <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{theme.name}</div>
+                  {isOwned ? (
+                    <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
+                      style={{ background: "rgba(63,207,163,0.15)", color: COL.mint }}>
+                      <Check size={12} /> Owned
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleBuyTheme(theme)}
+                      disabled={isBusy}
+                      style={neu(false, 999)}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 active:scale-95 transition disabled:opacity-60"
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold text-[9px]"
+                        style={{ background: "#F5B301", color: "#fff" }}>F</span>
+                      <span className="font-display font-bold text-xs" style={{ color: COL.ink }}>
+                        {isBusy ? "…" : fmtCompact(theme.price)}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {displayOwnedThemes.length > 0 && (
+            <div className="mt-4">
+              <div className="font-display font-semibold text-sm mb-2" style={{ color: COL.ink }}>
+                My Themes
+              </div>
+              <div className="flex flex-col gap-2">
+                {THEME_PACK.filter((t) => displayOwnedThemes.includes(t.id)).map((theme) => {
+                  const isActive = activeTheme === theme.id;
+                  return (
+                    <div key={theme.id} className="flex flex-col gap-1">
+                      <button
+                        onClick={() => handleEquipTheme(theme.id)}
+                        style={neu(false, 18)}
+                        className="flex items-center gap-3 p-2.5 active:scale-95 transition"
+                      >
+                        <img src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+                        <span className="flex-1 text-left font-display font-semibold text-xs" style={{ color: COL.ink }}>
+                          {theme.name}
+                        </span>
+                        <span className="font-body text-[10px] flex-shrink-0" style={{ color: isActive ? COL.violet : COL.sub }}>
+                          {isActive ? "Equipped" : "Use"}
+                        </span>
+                      </button>
+                      {justEquippedTheme === theme.id && (
+                        <div className="flex items-center justify-between gap-2 px-2.5">
+                          <span className="font-body text-[10px]" style={{ color: COL.gold }}>
+                            Restart Focusly to apply this theme.
+                          </span>
+                          <button
+                            onClick={() => window.location.reload()}
+                            className="flex-shrink-0 px-2.5 py-1 rounded-full font-display font-bold text-[10px] active:scale-95 transition"
+                            style={{ background: COL.violet, color: "#fff" }}
+                          >
+                            Reload now
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="font-display font-semibold text-base mb-3" style={{ color: COL.ink }}>
           My Collection
