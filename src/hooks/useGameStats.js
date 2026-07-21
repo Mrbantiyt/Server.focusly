@@ -75,6 +75,7 @@ function persistRewardState(uid, state) {
 export function useGameStats(uid, running, billing) {
   const [stats, setStats] = useState({
     xp: 0, coins: 0, streak: 0, streakDays: {}, lastStreakDay: null, ownedItems: [], activeMascot: "default",
+    ownedThemes: [], activeTheme: "default",
     sessionsCompleted: 0, lifetimeCoinsEarned: 0, subjectSeconds: {}, unlockedAchievements: [],
   });
   // True only once watchGameStats' onSnapshot callback has actually fired
@@ -92,6 +93,7 @@ export function useGameStats(uid, running, billing) {
     if (!uid) {
       setStats({
         xp: 0, coins: 0, streak: 0, streakDays: {}, lastStreakDay: null, ownedItems: [], activeMascot: "default",
+        ownedThemes: [], activeTheme: "default",
         sessionsCompleted: 0, lifetimeCoinsEarned: 0, subjectSeconds: {}, unlockedAchievements: [],
       });
       setLoaded(false);
@@ -207,6 +209,8 @@ export function useGameStats(uid, running, billing) {
     lastStreakDay: stats.lastStreakDay,
     ownedItems: stats.ownedItems,
     activeMascot: stats.activeMascot,
+    ownedThemes: stats.ownedThemes,
+    activeTheme: stats.activeTheme,
     sessionsCompleted: stats.sessionsCompleted,
     lifetimeCoinsEarned: stats.lifetimeCoinsEarned,
     subjectSeconds: stats.subjectSeconds,
