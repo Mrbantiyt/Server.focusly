@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
-import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme } from "./theme";
+import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme, getActiveTheme } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useSubjectTimer } from "./hooks/useSubjectTimer";
@@ -12,7 +12,7 @@ import { useGameStats } from "./hooks/useGameStats";
 import { useAchievements } from "./hooks/useAchievements";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
-import { watchUserProfile, watchAppUpdateConfig, incrementSessionsCompleted } from "./lib/firestore";
+import { watchUserProfile, watchAppUpdateConfig, watchMaintenanceConfig, incrementSessionsCompleted } from "./lib/firestore";
 import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -27,6 +27,7 @@ import SubjectStatsView from "./components/SubjectStatsView";
 import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
 import UpdateBanner from "./components/UpdateBanner";
+import MaintenanceScreen from "./components/MaintenanceScreen";
 import VerifyEmailGate from "./components/VerifyEmailGate";
 import LevelModal from "./components/LevelModal";
 import StreakModal from "./components/StreakModal";
@@ -57,7 +58,7 @@ const NAV = [
 const EMPTY_TASKS = [];
 
 export default function App() {
-  const { user, loading, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp, requestEmailChange, confirmEmailChange } = useAuth();
+  const { user, loading, isAdmin, signupWithEmail, loginWithEmail, resetPassword, logout, sendOtp, verifyOtp, requestEmailChange, confirmEmailChange } = useAuth();
   const [tab, setTab] = useState("home");
   const {
     remaining: timerRemaining, durationSeconds: timerDuration, running, finished: timerFinished,
@@ -227,7 +228,28 @@ export default function App() {
   // runs — it only affects what the app looks like the NEXT time it starts.
   useEffect(() => {
     if (!gameStats.loaded) return;
-    cacheActiveTheme(gameStats.activeTheme);
+    const firestoreTheme = gameStats.activeTheme || "default";
+    cacheActiveTheme(firestoreTheme);
+
+    // Auto-apply without requiring a manual "Reload now" tap: if the theme
+    // this tab already rendered with (resolved once, synchronously, from
+    // the local cache at module load — see theme.js) doesn't match what
+    // Firestore says is actually active, this tab is stale — most likely
+    // the very first load on a new device/browser (nothing cached yet, so
+    // theme.js defaulted) or a theme that was equipped from another
+    // device/tab. Reload once so the user sees the right theme immediately
+    // instead of only on their next manual app open.
+    //
+    // Guarded with a sessionStorage flag (not just a ref) so a genuinely
+    // failed/reverted theme write can't loop-reload forever within the same
+    // tab session — we only ever force one auto-reload per tab lifetime.
+    if (firestoreTheme !== getActiveTheme()) {
+      const alreadyReloaded = sessionStorage.getItem("focusly:themeAutoReloaded");
+      if (!alreadyReloaded) {
+        sessionStorage.setItem("focusly:themeAutoReloaded", "1");
+        window.location.reload();
+      }
+    }
   }, [gameStats.loaded, gameStats.activeTheme]);
 
   const allStoreItems = useAllStoreItems(STORE_ITEMS);
@@ -240,6 +262,14 @@ export default function App() {
   // flips it on/off while the app is already open.
   const [appUpdateConfig, setAppUpdateConfig] = useState(null);
   useEffect(() => watchAppUpdateConfig(setAppUpdateConfig), []);
+
+  // Maintenance-mode screen — same "ready before `user` resolves" reasoning
+  // as the update banner above, so it can block the screen the instant it's
+  // needed even before the profile doc loads. Whether it actually BLOCKS
+  // anything also depends on `isAdmin` (see the render gate below) — an
+  // admin account never sees this screen, even while it's enabled.
+  const [maintenanceConfig, setMaintenanceConfig] = useState(null);
+  useEffect(() => watchMaintenanceConfig(setMaintenanceConfig), []);
 
   const profile = user
     ? {
@@ -326,6 +356,8 @@ export default function App() {
             onLoginWithEmail={loginWithEmail}
             onResetPassword={resetPassword}
           />
+        ) : maintenanceConfig?.enabled && !isAdmin ? (
+          <MaintenanceScreen config={maintenanceConfig} />
         ) : profile && !profile.emailVerified ? (
           <VerifyEmailGate email={profile.email} onSendOtp={sendOtp} onVerifyOtp={verifyOtp} onLogout={logout} />
         ) : (
@@ -397,6 +429,8 @@ export default function App() {
                   dayKey={dayKey}
                   ownedItems={gameStats.ownedItems}
                   activeMascot={gameStats.activeMascot}
+                  ownedThemes={gameStats.ownedThemes}
+                  activeTheme={gameStats.activeTheme}
                   billing={profileDoc?.billing}
                   lastStreakDay={gameStats.lastStreakDay}
                   onOpenStreak={() => setShowStreak(true)}
