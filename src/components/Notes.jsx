@@ -21,9 +21,21 @@ function formatWhen(ts) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function Notes({ uid, notes }) {
+export default function Notes({ uid, notes, pendingOpenId, onConsumePendingOpenId }) {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
+
+  // A note created from outside this component (the bottom-nav "+" button)
+  // arrives here as `pendingOpenId` — open it immediately, then tell the
+  // parent we've consumed it so it doesn't try to re-open it again later
+  // (e.g. after navigating away and back to the Notes tab).
+  useEffect(() => {
+    if (pendingOpenId) {
+      setOpenId(pendingOpenId);
+      onConsumePendingOpenId?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenId]);
 
   const openNote = notes.find((n) => n.id === openId);
 
