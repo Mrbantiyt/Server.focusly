@@ -66,8 +66,8 @@ async function createScheduledPush(playerId, sendAfterIso) {
       app_id: appId,
       include_subscription_ids: [playerId],
       send_after: sendAfterIso,
-      headings: { en: "Timer complete! ⏰" },
-      contents: { en: "Your timer is completed, please reset it." },
+      headings: { en: "⏰ Focus Session Complete! 🎉" },
+      contents: { en: "Excellent work! You've successfully completed your study session. Take a short break and continue your learning journey. 📚🔥" },
       data: { targetUrl: "/" },
       // Ensures the device actually vibrates/sounds on delivery, not just a
       // silent notification-center entry.
