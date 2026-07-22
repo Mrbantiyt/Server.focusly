@@ -226,15 +226,97 @@ export function useCountdownTimer(uid) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, dayKey]);
 
-  // Flush on tab hide / app backgrounding / unload — covers the case where
-  // the periodic 5s interval hasn't fired yet but the user is leaving.
+  // ONE-TIME CATCH-UP ON MOUNT: the clock face self-corrects fine on
+  // reload because syncRemainingFromClock() recomputes it from endAtRef —
+  // but that correction only happens inside tick(), and tick() only runs
+  // once the interval below has actually started, one second AFTER mount.
+  // Nothing else recomputes "Time today" for the gap between when this
+  // state was last persisted and now.
+  //
+  // On a native-wrapped WebView, backgrounding/killing the app means the JS
+  // runtime — and every tick() call — simply stops running. Reopening the
+  // app restarts the runtime fresh, seeding remainingRef/bankedTodayRef
+  // from whatever was last written to localStorage before it died: the
+  // countdown gets corrected on the next tick, but the seconds that
+  // elapsed *while nothing could tick* were never banked to "Time today"
+  // and never will be, since bankSeconds is normally only called from
+  // inside tick(). That's the exact bug in the reload screenshot: the
+  // countdown face jumps to the right remaining time, but "Time today"
+  // stays frozen at whatever was banked before the app was backgrounded.
+  //
+  // Fix: run the same before/after/bankSeconds reconciliation tick() does,
+  // once, synchronously on mount — before the user sees anything — so the
+  // gap is credited immediately instead of silently dropped.
+  const didCatchUpRef = useRef(false);
   useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState === "hidden") flushToFirestore(); };
+    if (didCatchUpRef.current) return;
+    didCatchUpRef.current = true;
+    if (!runningRef.current || !endAtRef.current) return;
+
+    const before = remainingRef.current;
+    const after = syncRemainingFromClock();
+    const elapsed = before - after;
+    if (elapsed > 0) {
+      setRemaining(after);
+      bankSeconds(elapsed);
+      flushToFirestore(); // don't wait for the next 2s tick to save the recovered time
+    }
+
+    if (after <= 0) {
+      runningRef.current = false;
+      setRunning(false);
+      setFinished(true);
+      endAtRef.current = null;
+    }
+
+    persistState(uid, {
+      dayKey,
+      running: runningRef.current,
+      durationSeconds,
+      remaining: remainingRef.current,
+      bankedToday: bankedTodayRef.current,
+      endAt: endAtRef.current,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Flush on tab hide / app backgrounding / unload — covers the case where
+  // the periodic 2s interval hasn't fired yet but the user is leaving.
+  //
+  // IMPORTANT: this must bank the fresh elapsed gap FIRST, then flush —
+  // just calling flushToFirestore() alone only saves whatever was already
+  // in bankedTodayRef from the last tick, which can be up to ~1s (or more,
+  // if the last tick landed late) stale. Since going-to-background is
+  // exactly the moment after which no more ticks may ever fire before the
+  // OS kills the JS runtime, that last fraction of a second needs to be
+  // credited right here, synchronously, before the runtime has any chance
+  // of being frozen — waiting for it to reach the next tick is not safe
+  // once backgrounding has already started.
+  const bankAndFlushBeforeBackground = () => {
+    if (runningRef.current && endAtRef.current) {
+      const before = remainingRef.current;
+      const after = syncRemainingFromClock();
+      const elapsed = before - after;
+      if (elapsed > 0) {
+        setRemaining(after);
+        bankSeconds(elapsed);
+      }
+    }
+    flushToFirestore();
+    persistNow(); // also refresh the localStorage mirror with the just-banked seconds
+  };
+
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "hidden") bankAndFlushBeforeBackground(); };
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", flushToFirestore);
+    window.addEventListener("pagehide", bankAndFlushBeforeBackground);
+    // "blur" catches app-switch/home-button on some native WebViews that
+    // don't reliably fire visibilitychange before the runtime is paused.
+    window.addEventListener("blur", bankAndFlushBeforeBackground);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", flushToFirestore);
+      window.removeEventListener("pagehide", bankAndFlushBeforeBackground);
+      window.removeEventListener("blur", bankAndFlushBeforeBackground);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, dayKey]);
