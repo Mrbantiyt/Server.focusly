@@ -479,45 +479,133 @@ export default function App() {
             </div>
 
             <div className="px-5 pb-5 pt-2">
-              <div
-                style={neu(false, 999)}
-                className="flex items-center justify-between px-2 py-2 min-w-0"
-              >
-                {NAV.map((n) => {
-                  const Icon = n.icon, active = tab === n.id;
+              {activeThemeId === THEMES.aura ? (
+                (() => {
+                  const home = NAV.find((n) => n.id === "home");
+                  const rest = NAV.filter((n) => n.id !== "home");
+                  const left = rest.slice(0, 2);
+                  const right = rest.slice(2);
+                  const HomeIcon = home.icon;
+                  const homeActive = tab === home.id;
+                  const renderSide = (items) =>
+                    items.map((n) => {
+                      const Icon = n.icon, active = tab === n.id;
+                      return (
+                        <button
+                          key={n.id}
+                          onClick={() => {
+                            setTab(n.id);
+                            setSettingsInitialSection(null);
+                          }}
+                          className="flex-1 flex flex-col items-center gap-1"
+                        >
+                          <Icon size={19} color={active ? COL.violet : COL.sub} strokeWidth={active ? 2.4 : 2} />
+                          <span
+                            className="font-body text-[10px] font-semibold"
+                            style={{ color: active ? COL.violet : COL.sub }}
+                          >
+                            {n.label}
+                          </span>
+                        </button>
+                      );
+                    });
                   return (
-                    <button
-                      key={n.id}
-                      onClick={() => {
-                        setTab(n.id);
-                        setSettingsInitialSection(null);
-                      }}
-                      style={
-                        active
-                          ? {
-                              background: COL.violet,
-                              borderRadius: 999,
-                              boxShadow:
-                                activeThemeId === THEMES.neomorphism
-                                  ? "3px 3px 8px rgba(163,158,152,0.4), -3px -3px 8px rgba(255,255,255,0.7)"
-                                  : "0 4px 14px rgba(123,110,246,0.45)",
-                            }
-                          : undefined
-                      }
-                      className={`flex items-center gap-1.5 transition-all duration-200 ${
-                        active ? "px-3.5 py-2" : "px-2.5 py-2"
-                      }`}
-                    >
-                      <Icon size={17} color={active ? "#FFFFFF" : COL.sub} />
-                      {active && (
-                        <span className="font-body text-xs font-semibold whitespace-nowrap text-white">
-                          {n.label}
-                        </span>
-                      )}
-                    </button>
+                    <div className="relative" style={{ height: 92 }}>
+                      {/*
+                        The bar's own silhouette dips into a notch around the
+                        floating Home button (matching the reference) rather
+                        than being a plain pill with a button on top — a
+                        rounded-rect can't do this, so the bar itself is an
+                        SVG path: two small peaks either side of a central
+                        semicircular dip, dropping into rounded bottom
+                        corners.
+                      */}
+                      <svg
+                        className="absolute inset-0 w-full h-full"
+                        viewBox="0 0 340 92"
+                        preserveAspectRatio="none"
+                        style={{ filter: "drop-shadow(0 2px 10px rgba(20,30,50,0.10))" }}
+                      >
+                        <path
+                          d="M 20 30
+                             C 60 30, 95 4, 130 4
+                             C 150 4, 148 34, 170 34
+                             C 192 34, 190 4, 210 4
+                             C 245 4, 280 30, 320 30
+                             L 320 72
+                             C 320 82.5, 311.5 91, 301 91
+                             L 39 91
+                             C 28.5 91, 20 82.5, 20 72
+                             Z"
+                          fill={COL.card}
+                        />
+                      </svg>
+
+                      <div className="relative flex items-end justify-between h-full px-4 pb-3">
+                        {renderSide(left)}
+                        {/* Spacer keeping the side groups clear of the notch/floating button */}
+                        <div className="w-16 flex-shrink-0" />
+                        {renderSide(right)}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setTab(home.id);
+                          setSettingsInitialSection(null);
+                        }}
+                        aria-label={home.label}
+                        style={{
+                          background: COL.violet,
+                          boxShadow: "0 8px 20px rgba(22,64,107,0.4)",
+                        }}
+                        className="absolute left-1/2 -translate-x-1/2 top-0.5 w-[54px] h-[54px] rounded-full flex items-center justify-center active:scale-95 transition"
+                      >
+                        <HomeIcon size={21} color="#FFFFFF" strokeWidth={homeActive ? 2.4 : 2} />
+                      </button>
+                    </div>
                   );
-                })}
-              </div>
+                })()
+              ) : (
+                <div
+                  style={neu(false, 999)}
+                  className="flex items-center justify-between px-2 py-2 min-w-0"
+                >
+                  {NAV.map((n) => {
+                    const Icon = n.icon, active = tab === n.id;
+                    return (
+                      <button
+                        key={n.id}
+                        onClick={() => {
+                          setTab(n.id);
+                          setSettingsInitialSection(null);
+                        }}
+                        style={
+                          active
+                            ? {
+                                background: COL.violet,
+                                borderRadius: 999,
+                                boxShadow:
+                                  activeThemeId === THEMES.neomorphism
+                                    ? "3px 3px 8px rgba(163,158,152,0.4), -3px -3px 8px rgba(255,255,255,0.7)"
+                                    : "0 4px 14px rgba(123,110,246,0.45)",
+                              }
+                            : undefined
+                        }
+                        className={`flex items-center gap-1.5 transition-all duration-200 ${
+                          active ? "px-3.5 py-2" : "px-2.5 py-2"
+                        }`}
+                      >
+                        <Icon size={17} color={active ? "#FFFFFF" : COL.sub} />
+                        {active && (
+                          <span className="font-body text-xs font-semibold whitespace-nowrap text-white">
+                            {n.label}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </>
         )}
