@@ -76,7 +76,7 @@ const PALETTE_NEOMORPHISM = {
 // background, pure-white cards, deep-navy accent (used for the active nav
 // pill / featured cards), warm gold for secondary highlights.
 const PALETTE_AURA = {
-  bg: "#F4F5F8", card: "#FFFFFF", ink: "#1A2233", sub: "#8A94A6",
+  bg: "#F4F5F8", card: "#FFFFFF", ink: "#10141C", sub: "#6B7688",
   violet: "#16406B", violetDeep: "#0E2C4A", blue: "#4A90E2",
   mint: "#3FA36B", coral: "#E8555F", gold: "#F4B740",
   track: "#EEF1F6", border: "#E7EBF2", input: "#F0F2F6",

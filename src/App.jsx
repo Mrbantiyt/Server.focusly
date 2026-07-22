@@ -499,9 +499,9 @@ export default function App() {
                           }}
                           className="flex-1 flex flex-col items-center gap-1"
                         >
-                          <Icon size={19} color={active ? COL.violet : COL.sub} strokeWidth={active ? 2.4 : 2} />
+                          <Icon size={21} color={active ? COL.violet : COL.sub} strokeWidth={active ? 2.4 : 2} />
                           <span
-                            className="font-body text-[10px] font-semibold"
+                            className="font-body text-[11px] font-semibold"
                             style={{ color: active ? COL.violet : COL.sub }}
                           >
                             {n.label}
@@ -510,7 +510,7 @@ export default function App() {
                       );
                     });
                   return (
-                    <div className="relative" style={{ height: 92 }}>
+                    <div className="relative" style={{ height: 104 }}>
                       {/*
                         The bar's own silhouette dips into a notch around the
                         floating Home button (matching the reference) rather
@@ -518,30 +518,35 @@ export default function App() {
                         rounded-rect can't do this, so the bar itself is an
                         SVG path: two small peaks either side of a central
                         semicircular dip, dropping into rounded bottom
-                        corners.
+                        corners. `preserveAspectRatio="none"` lets the path
+                        stretch to fill whatever width the phone actually
+                        has (rather than the fixed 340px mock width),
+                        keeping every corner/curve proportionally in place
+                        instead of just clipping or shrinking on real
+                        devices.
                       */}
                       <svg
                         className="absolute inset-0 w-full h-full"
-                        viewBox="0 0 340 92"
+                        viewBox="0 0 340 104"
                         preserveAspectRatio="none"
                         style={{ filter: "drop-shadow(0 2px 10px rgba(20,30,50,0.10))" }}
                       >
                         <path
-                          d="M 20 30
-                             C 60 30, 95 4, 130 4
-                             C 150 4, 148 34, 170 34
-                             C 192 34, 190 4, 210 4
-                             C 245 4, 280 30, 320 30
-                             L 320 72
-                             C 320 82.5, 311.5 91, 301 91
-                             L 39 91
-                             C 28.5 91, 20 82.5, 20 72
+                          d="M 20 34
+                             C 60 34, 95 4, 130 4
+                             C 150 4, 148 38, 170 38
+                             C 192 38, 190 4, 210 4
+                             C 245 4, 280 34, 320 34
+                             L 320 84
+                             C 320 94.5, 311.5 103, 301 103
+                             L 39 103
+                             C 28.5 103, 20 94.5, 20 84
                              Z"
                           fill={COL.card}
                         />
                       </svg>
 
-                      <div className="relative flex items-end justify-between h-full px-4 pb-3">
+                      <div className="relative flex items-end justify-between h-full px-5 pb-3.5">
                         {renderSide(left)}
                         {/* Spacer keeping the side groups clear of the notch/floating button */}
                         <div className="w-16 flex-shrink-0" />
@@ -558,9 +563,9 @@ export default function App() {
                           background: COL.violet,
                           boxShadow: "0 8px 20px rgba(22,64,107,0.4)",
                         }}
-                        className="absolute left-1/2 -translate-x-1/2 top-0.5 w-[54px] h-[54px] rounded-full flex items-center justify-center active:scale-95 transition"
+                        className="absolute left-1/2 -translate-x-1/2 top-1 w-[58px] h-[58px] rounded-full flex items-center justify-center active:scale-95 transition"
                       >
-                        <HomeIcon size={21} color="#FFFFFF" strokeWidth={homeActive ? 2.4 : 2} />
+                        <HomeIcon size={23} color="#FFFFFF" strokeWidth={homeActive ? 2.4 : 2} />
                       </button>
                     </div>
                   );
