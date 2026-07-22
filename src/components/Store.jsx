@@ -42,6 +42,7 @@ const BLACK_PACK = [
 export const THEME_PACK = [
   { id: "liquidGlass", name: "Glassmorphism", img: "/store/theme-liquid-glass.png", price: 50000 },
   { id: "neomorphism", name: "Neomorphism", img: "/store/theme-neomorphism.png", price: 50000 },
+  { id: "aura", name: "Aura", img: "/store/theme-aura.png", price: 100000 },
 ];
 
 // Flat lookup of the hardcoded (built-in) items only — used at first paint
