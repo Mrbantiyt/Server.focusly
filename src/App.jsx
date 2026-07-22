@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
-import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme, getActiveTheme } from "./theme";
+import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme, getActiveTheme, THEMES } from "./theme";
 import { useAuth } from "./hooks/useAuth";
 import { useCountdownTimer } from "./hooks/useCountdownTimer";
 import { useSubjectTimer } from "./hooks/useSubjectTimer";
@@ -12,7 +12,7 @@ import { useGameStats } from "./hooks/useGameStats";
 import { useAchievements } from "./hooks/useAchievements";
 import { useNotifications } from "./hooks/useNotifications";
 import { useLeaderboard } from "./hooks/useLeaderboard";
-import { watchUserProfile, watchAppUpdateConfig, watchMaintenanceConfig, incrementSessionsCompleted } from "./lib/firestore";
+import { watchUserProfile, watchAppUpdateConfig, watchMaintenanceConfig, incrementSessionsCompleted, addNote } from "./lib/firestore";
 import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
@@ -45,12 +45,15 @@ const FONT = (
   `}</style>
 );
 
+// Resolved once — same restart-to-apply rule as the rest of theme.js.
+const activeThemeId = getActiveTheme();
+
 const NAV = [
-  { id: "home", icon: Home },
-  { id: "chat", icon: MessageSquare },
-  { id: "notes", icon: StickyNote },
-  { id: "cal", icon: CalendarDays },
-  { id: "settings", icon: SettingsIcon },
+  { id: "home", icon: Home, label: "Home" },
+  { id: "chat", icon: MessageSquare, label: "Ask AI" },
+  { id: "notes", icon: StickyNote, label: "Notes" },
+  { id: "cal", icon: CalendarDays, label: "Calendar" },
+  { id: "settings", icon: SettingsIcon, label: "Settings" },
 ];
 
 // Stable reference (not a fresh [] every render) — see comment where it's
@@ -81,6 +84,25 @@ export default function App() {
   // re-render tick) is gone for good, which is also a real perf win.
   const tasks = EMPTY_TASKS;
   const { notes } = useNotes(user?.uid);
+  // Bottom-nav "+" button: creates a note immediately (from anywhere in the
+  // app), switches to the Notes tab, and hands the fresh note's id to
+  // <Notes> so it opens straight into the editor. `pendingNoteId` is
+  // cleared once Notes has consumed it, so re-visiting the Notes tab later
+  // doesn't keep re-opening that same note.
+  const [pendingNoteId, setPendingNoteId] = useState(null);
+  const [creatingNote, setCreatingNote] = useState(false);
+  const handleQuickAddNote = useCallback(async () => {
+    if (!user || creatingNote) return;
+    setCreatingNote(true);
+    try {
+      const id = await addNote(user.uid, "");
+      setPendingNoteId(id);
+      setSettingsInitialSection(null);
+      setTab("notes");
+    } finally {
+      setCreatingNote(false);
+    }
+  }, [user, creatingNote]);
   // Custom profile overrides (name / DP / billing) stored in Firestore,
   // layered on top of the Google-auth user. Declared here (before
   // gameStats) so its `billing` field can be passed straight into
@@ -400,7 +422,14 @@ export default function App() {
                 <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} onUpgradePlan={goToBilling} />
               </div>
 
-              {tab === "notes" && <Notes uid={user.uid} notes={notes} />}
+              {tab === "notes" && (
+                <Notes
+                  uid={user.uid}
+                  notes={notes}
+                  pendingOpenId={pendingNoteId}
+                  onConsumePendingOpenId={() => setPendingNoteId(null)}
+                />
+              )}
               {tab === "cal" && (
                 <div className="flex flex-col gap-6">
                   <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
@@ -450,7 +479,10 @@ export default function App() {
             </div>
 
             <div className="px-5 pb-5 pt-2">
-              <div style={neu(false, 24)} className="flex items-center justify-between px-4 py-3">
+              <div
+                style={neu(false, 999)}
+                className="flex items-center justify-between px-2 py-2 min-w-0"
+              >
                 {NAV.map((n) => {
                   const Icon = n.icon, active = tab === n.id;
                   return (
@@ -460,10 +492,28 @@ export default function App() {
                         setTab(n.id);
                         setSettingsInitialSection(null);
                       }}
-                      className="flex flex-col items-center gap-1"
+                      style={
+                        active
+                          ? {
+                              background: COL.violet,
+                              borderRadius: 999,
+                              boxShadow:
+                                activeThemeId === THEMES.neomorphism
+                                  ? "3px 3px 8px rgba(163,158,152,0.4), -3px -3px 8px rgba(255,255,255,0.7)"
+                                  : "0 4px 14px rgba(123,110,246,0.45)",
+                            }
+                          : undefined
+                      }
+                      className={`flex items-center gap-1.5 transition-all duration-200 ${
+                        active ? "px-3.5 py-2" : "px-2.5 py-2"
+                      }`}
                     >
-                      <Icon size={18} color={active ? COL.violet : COL.sub} />
-                      <div className="w-1 h-1 rounded-full" style={{ background: active ? COL.violet : "transparent" }} />
+                      <Icon size={17} color={active ? "#FFFFFF" : COL.sub} />
+                      {active && (
+                        <span className="font-body text-xs font-semibold whitespace-nowrap text-white">
+                          {n.label}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
