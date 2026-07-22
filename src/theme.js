@@ -10,13 +10,12 @@ export const THEMES = {
   default: "default",
   liquidGlass: "liquidGlass",
   neomorphism: "neomorphism",
-  aura: "aura",
 };
 
 function readCachedTheme() {
   try {
     const raw = localStorage.getItem(THEME_CACHE_PREFIX + "current");
-    if (raw === THEMES.neomorphism || raw === THEMES.liquidGlass || raw === THEMES.aura || raw === THEMES.default) return raw;
+    if (raw === THEMES.neomorphism || raw === THEMES.liquidGlass || raw === THEMES.default) return raw;
   } catch {
   }
   return THEMES.default;
@@ -24,7 +23,7 @@ function readCachedTheme() {
 
 export function cacheActiveTheme(themeId) {
   const value =
-    themeId === THEMES.neomorphism || themeId === THEMES.liquidGlass || themeId === THEMES.aura
+    themeId === THEMES.neomorphism || themeId === THEMES.liquidGlass
       ? themeId
       : THEMES.default;
   try {
@@ -72,20 +71,9 @@ const PALETTE_NEOMORPHISM = {
   track: "#D8D5D1", border: "#D2CFC9", input: "#DEDBD7",
 };
 
-// Light "smart-home" soft-UI palette — matches the reference: near-white
-// background, pure-white cards, deep-navy accent (used for the active nav
-// pill / featured cards), warm gold for secondary highlights.
-const PALETTE_AURA = {
-  bg: "#F4F5F8", card: "#FFFFFF", ink: "#10141C", sub: "#6B7688",
-  violet: "#16406B", violetDeep: "#0E2C4A", blue: "#4A90E2",
-  mint: "#3FA36B", coral: "#E8555F", gold: "#F4B740",
-  track: "#EEF1F6", border: "#E7EBF2", input: "#F0F2F6",
-};
-
 function paletteFor(themeId) {
   if (themeId === THEMES.neomorphism) return PALETTE_NEOMORPHISM;
   if (themeId === THEMES.liquidGlass) return PALETTE_LIQUID_GLASS;
-  if (themeId === THEMES.aura) return PALETTE_AURA;
   return PALETTE_DEFAULT;
 }
 
@@ -141,26 +129,9 @@ function neuSoft(inset, r) {
   };
 }
 
-// Aura (purchasable): the reference's clean "smart-home app" surface — a
-// solid white card with one soft ambient drop shadow (not the dual
-// light/dark neomorphic shadow — this look reads as sitting flat on a
-// pale background, not extruded from it). `inset` gives a faint pressed
-// look for track/input surfaces.
-function neuAura(inset, r) {
-  return {
-    borderRadius: r,
-    background: PALETTE_AURA.card,
-    border: inset ? `1px solid ${PALETTE_AURA.border}` : "none",
-    boxShadow: inset
-      ? "inset 0 2px 4px rgba(20,30,50,0.06)"
-      : "0 2px 10px rgba(20,30,50,0.06)",
-  };
-}
-
 export const neu = (inset = false, r = 20) => {
   if (ACTIVE_THEME === THEMES.neomorphism) return neuSoft(inset, r);
   if (ACTIVE_THEME === THEMES.liquidGlass) return neuGlass(inset, r);
-  if (ACTIVE_THEME === THEMES.aura) return neuAura(inset, r);
   return neuDefault(inset, r);
 };
 
@@ -174,9 +145,6 @@ export const neu = (inset = false, r = 20) => {
 export const LIQUID_BG_STYLE = (() => {
   if (ACTIVE_THEME === THEMES.neomorphism) {
     return { background: PALETTE_NEOMORPHISM.bg };
-  }
-  if (ACTIVE_THEME === THEMES.aura) {
-    return { background: PALETTE_AURA.bg };
   }
   if (ACTIVE_THEME === THEMES.liquidGlass) {
     return {
