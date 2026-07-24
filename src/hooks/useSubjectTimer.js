@@ -356,6 +356,12 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   };
 
   useEffect(() => {
+    // Resync immediately on mount, not just on the first interval tick a
+    // second later — a restored/reloaded app can otherwise leave a
+    // background/screen-off gap's elapsed seconds unbanked until the next
+    // timer or visibility event, which a reclaimed native WebView may never
+    // fire. See the matching comment in useCountdownTimer.js.
+    tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -397,4 +403,5 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     clearPlan,
     dayKey,
   };
-}
+      }
+                       
