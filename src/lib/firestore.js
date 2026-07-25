@@ -809,9 +809,51 @@ export function watchAppUpdateConfig(cb) {
 // maintenance-mode screen (config/maintenance) — see App.jsx for how this
 // is combined with the signed-in user's admin claim to decide whether the
 // blocking maintenance screen actually shows.
+//
+// Supports an OPTIONAL schedule window (scheduledStart / scheduledEnd, ISO
+// datetimes) on top of the manual `enabled` toggle set by the admin panel.
+// When both are present, `effectiveEnabled` is computed HERE, client-side,
+// by comparing the current time against the window — this is what makes
+// the maintenance screen turn on/off exactly on schedule with no cron or
+// polling involved: every signed-in client is already listening in
+// realtime, so this just re-evaluates on every snapshot plus a 30s ticker
+// (below) to also catch the boundary while no write is happening.
+function computeEffectiveEnabled(data) {
+  if (!data) return false;
+  const { enabled, scheduledStart, scheduledEnd } = data;
+  if (scheduledStart && scheduledEnd) {
+    const now = Date.now();
+    const start = new Date(scheduledStart).getTime();
+    const end = new Date(scheduledEnd).getTime();
+    if (Number.isFinite(start) && Number.isFinite(end)) {
+      return now >= start && now < end;
+    }
+  }
+  return !!enabled;
+}
+
 export function watchMaintenanceConfig(cb) {
   const ref = doc(db, "config", "maintenance");
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
+  let latest = null;
+  let timer = null;
+
+  const emit = () => cb(latest ? { ...latest, effectiveEnabled: computeEffectiveEnabled(latest) } : null);
+
+  const unsubscribe = onSnapshot(ref, (snap) => {
+    latest = snap.exists() ? snap.data() : null;
+    emit();
+    // Re-check every 30s so the screen still flips on/off right at the
+    // scheduled boundary even if nothing else triggers a new snapshot.
+    if (timer) clearInterval(timer);
+    if (latest?.scheduledStart && latest?.scheduledEnd) {
+      timer = setInterval(emit, 30000);
+    }
+  });
+
+  return () => {
+    if (timer) clearInterval(timer);
+    unsubscribe();
+  };
 }
 
 /* --------------------------------- usernames ------------------------------------ */
