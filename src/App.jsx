@@ -378,7 +378,7 @@ export default function App() {
             onLoginWithEmail={loginWithEmail}
             onResetPassword={resetPassword}
           />
-        ) : maintenanceConfig?.enabled && !isAdmin ? (
+        ) : maintenanceConfig?.effectiveEnabled && !isAdmin ? (
           <MaintenanceScreen config={maintenanceConfig} />
         ) : profile && !profile.emailVerified ? (
           <VerifyEmailGate email={profile.email} onSendOtp={sendOtp} onVerifyOtp={verifyOtp} onLogout={logout} />
