@@ -59,6 +59,52 @@ import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timer
 // interval only bounds how stale the *server-side* copy can get before the
 // next save).
 const STORAGE_KEY_PREFIX = "focusly:timerState:";
+// Separate from STORAGE_KEY_PREFIX: that key mirrors the CURRENT day's live
+// countdown state and is intentionally discarded once its dayKey is stale
+// (see loadPersistedState below) — a new day starts the countdown fresh.
+// This queue is different: it holds seconds that were banked but NEVER
+// confirmed written to Firestore, keyed by calendar day. It survives day
+// rollovers, app restarts, and uid switches (each uid's queue is separate)
+// specifically so a failed sync from yesterday is never silently dropped
+// just because today started. Each entry carries a unique sessionId so a
+// retry can never be double-applied even if the same entry gets synced
+// twice (e.g. two tabs racing) — see syncPendingQueue's duplicate guard.
+const QUEUE_KEY_PREFIX = "focusly:pendingStudySeconds:";
+
+function loadQueue(uid) {
+  if (!uid) return [];
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY_PREFIX + uid);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(uid, queue) {
+  if (!uid) return;
+  try {
+    if (queue.length === 0) localStorage.removeItem(QUEUE_KEY_PREFIX + uid);
+    else localStorage.setItem(QUEUE_KEY_PREFIX + uid, JSON.stringify(queue));
+  } catch {
+    // Storage full/unavailable — non-fatal, same reasoning as persistState.
+  }
+}
+
+// Queues `seconds` (an ABSOLUTE day-total, same shape setStudyDay expects)
+// for `dayKey`, tagged with a unique sessionId, so it can be retried later
+// even across a day rollover or app restart. If an entry for the same
+// dayKey already exists, it's replaced (not appended) — we only ever need
+// to remember the LATEST known-good total per day, not a history of every
+// intermediate value that failed to sync.
+function enqueuePending(uid, dayKey, seconds) {
+  if (!uid) return;
+  const queue = loadQueue(uid).filter((e) => e.dayKey !== dayKey);
+  queue.push({ sessionId: `${dayKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dayKey, seconds, queuedAt: Date.now() });
+  saveQueue(uid, queue);
+}
 
 function loadPersistedState(uid) {
   if (!uid) return null;
@@ -67,6 +113,10 @@ function loadPersistedState(uid) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     // Ignore state from a previous calendar day — a new day starts fresh.
+    // NOTE: this is safe to discard outright (unlike the queue above)
+    // because any seconds it represented were already merged into the
+    // pending-sync queue by the day-rollover handling in tick()/the mount
+    // effect before this check would ever see a stale dayKey matter.
     if (parsed.dayKey !== dayKeyFor(new Date())) return null;
     return parsed;
   } catch {
@@ -85,6 +135,17 @@ function persistState(uid, state) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Idempotent session completion tracking
+// ---------------------------------------------------------------------------
+// Each countdown run (from start() to either pause()/reset() or hitting 0)
+// gets a unique sessionId, generated once in start() and carried through
+// localStorage alongside the rest of the timer state. See
+// hooks/timerSessionCredit.js for the full reasoning on why this is needed
+// on top of App.jsx's in-memory sessionCreditedRef.
+import { makeSessionId, hasSessionBeenCredited, markSessionCredited } from "./timerSessionCredit";
+const SESSION_KIND = "studyTimer";
+
 export function useCountdownTimer(uid) {
   const persisted = loadPersistedState(uid);
 
@@ -98,6 +159,12 @@ export function useCountdownTimer(uid) {
   const remainingRef = useRef(persisted?.remaining ?? persisted?.durationSeconds ?? 25 * 60);
   const runningRef = useRef(persisted?.running || false);
   const bankedTodayRef = useRef(persisted?.bankedToday || 0); // last-known-good "Time today" total (seconds), never moves backward from a stale remote value
+  // Unique id for the CURRENT countdown run — see the "Idempotent session
+  // completion tracking" comment above. Generated fresh in start(); carried
+  // across reloads via persisted state so a session that finishes while the
+  // app is closed still resolves to the same id once restored, and its
+  // completion can be recognized as "already credited" on any later remount.
+  const sessionIdRef = useRef(persisted?.sessionId || null);
 
   // Absolute wall-clock timestamp the countdown is aiming at, in ms
   // (Date.now() + remaining*1000). null when paused/not running. This is
@@ -123,6 +190,49 @@ export function useCountdownTimer(uid) {
   };
 
   useEffect(() => { runningRef.current = running; }, [running]);
+
+  // Drains the durable cross-day pending-sync queue (see enqueuePending
+  // above) — retries writing each queued day's last-known seconds total to
+  // Firestore, and only removes an entry from the queue once its write is
+  // CONFIRMED successful. Runs once on mount (catches anything left over
+  // from a previous session that never got to sync — app crash, browser
+  // closed while offline, etc.) and again every time the browser regains
+  // connectivity, so a genuinely offline session syncs automatically the
+  // moment the network comes back, with no user action needed.
+  //
+  // Each queued entry is an ABSOLUTE seconds total for its day (not a
+  // delta), and setStudyDay's transaction is itself idempotent for a given
+  // (day, value) pair — replaying the same write twice (e.g. this queue
+  // AND the live flushToFirestore both eventually writing the same day) is
+  // therefore always safe and can never double-count.
+  useEffect(() => {
+    if (!uid) return;
+    let cancelled = false;
+
+    const syncPendingQueue = async () => {
+      const queue = loadQueue(uid);
+      if (queue.length === 0) return;
+      const remaining = [];
+      for (const entry of queue) {
+        if (cancelled) { remaining.push(entry); continue; }
+        try {
+          await setStudyDay(uid, entry.dayKey, entry.seconds);
+          // Confirmed synced — drop it from the queue (don't push to remaining).
+        } catch (err) {
+          console.warn(`[timer] Retry failed for queued session ${entry.sessionId}, will retry again later:`, err);
+          remaining.push(entry); // keep it queued, try again next time
+        }
+      }
+      if (!cancelled) saveQueue(uid, remaining);
+    };
+
+    syncPendingQueue();
+    window.addEventListener("online", syncPendingQueue);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("online", syncPendingQueue);
+    };
+  }, [uid]);
 
   // Load "Time today" once per uid/dayKey, then stay live-synced across
   // tabs/devices.
@@ -197,15 +307,48 @@ export function useCountdownTimer(uid) {
 
   const flushInFlightRef = useRef(false);
   const pendingFlushRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const backoffUntilRef = useRef(0);
+
+  // Returns a Promise that resolves once the CURRENT bankedTodayRef value is
+  // confirmed written to Firestore (or gives up after retries, but never
+  // throws — callers that need "definitely saved before we do X" should
+  // still `await` this, since it always resolves).
+  //
+  // Retries with exponential backoff (1s, 2s, 4s, capped at 30s) on failure,
+  // instead of silently relying on the next periodic tick — the periodic
+  // 2s interval below is now purely a safety net for picking up NEW banked
+  // seconds, not the retry mechanism for a failed write.
   const flushToFirestore = () => {
-    if (!uid || !pendingFlushRef.current || flushInFlightRef.current) return;
+    if (!uid) return Promise.resolve();
+    if (flushInFlightRef.current) {
+      // A flush is already in progress. Don't start a second one (that's
+      // what caused the write-reordering bug described above) — just mark
+      // that there's more to send and let the in-flight one's completion
+      // (or the next periodic tick) pick it up.
+      pendingFlushRef.current = true;
+      return Promise.resolve();
+    }
+    if (!pendingFlushRef.current) return Promise.resolve();
+
     flushInFlightRef.current = true;
     pendingFlushRef.current = false;
     const valueAtFlushTime = bankedTodayRef.current;
-    setStudyDay(uid, dayKey, valueAtFlushTime)
+
+    return setStudyDay(uid, dayKey, valueAtFlushTime)
+      .then(() => {
+        retryCountRef.current = 0;
+      })
       .catch((err) => {
         console.warn("[timer] Failed to save today's time, will retry:", err);
         pendingFlushRef.current = true; // retry on the next flush tick
+        retryCountRef.current += 1;
+        // Exponential backoff: skip the next N periodic ticks so we don't
+        // hammer Firestore while it (or the network) is down. The periodic
+        // 2s interval keeps firing regardless; this just makes it a no-op
+        // until backoffUntilRef passes.
+        const delayMs = Math.min(30000, 1000 * 2 ** Math.min(retryCountRef.current, 5));
+        backoffUntilRef.current = Date.now() + delayMs;
       })
       .finally(() => {
         flushInFlightRef.current = false;
@@ -221,7 +364,10 @@ export function useCountdownTimer(uid) {
   // localStorage persistence below is the primary defense, this is the
   // backup bound.
   useEffect(() => {
-    const id = setInterval(flushToFirestore, 2000);
+    const id = setInterval(() => {
+      if (Date.now() < backoffUntilRef.current) return; // still in backoff after a recent failure
+      flushToFirestore();
+    }, 2000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid, dayKey]);
@@ -246,7 +392,21 @@ export function useCountdownTimer(uid) {
   // timestamp) rather than trusting the interval's own cadence.
   const tick = () => {
     const key = dayKeyFor(new Date());
-    if (key !== dayKey) { setDayKey(key); return; } // fresh day: let the load effect above pick up the new doc
+    if (key !== dayKey) {
+      // Midnight rollover mid-tick. If there's still an unconfirmed flush
+      // pending for the day that just ended (a write in flight, in
+      // backoff after a failure, or simply not due yet), queue its last
+      // known value durably (survives across the rollover / an app
+      // restart) instead of letting it be silently superseded once
+      // `dayKey` flips and every subsequent flush targets the NEW day's
+      // doc. syncPendingQueue (run on next mount / online) retries it
+      // independently of whatever the countdown is doing today.
+      if (pendingFlushRef.current || flushInFlightRef.current) {
+        enqueuePending(uid, dayKey, bankedTodayRef.current);
+      }
+      setDayKey(key);
+      return;
+    } // fresh day: let the load effect above pick up the new doc
 
     if (!runningRef.current || !endAtRef.current) return;
 
@@ -263,6 +423,20 @@ export function useCountdownTimer(uid) {
       setRunning(false);
       setFinished(true);
       endAtRef.current = null;
+      // THE ROOT CAUSE THIS FIXES: bankSeconds() above already credited the
+      // final elapsed seconds to bankedTodayRef/todaySeconds (in-memory +
+      // React state), but only marked pendingFlushRef true — the actual
+      // Firestore write was left to the next periodic 2s flush tick, same
+      // as any other tick. Every OTHER "stop counting" path (pause, reset,
+      // tab-hide, unload) explicitly calls flushToFirestore() right away;
+      // this natural-completion path was the one spot that didn't. If the
+      // user refreshed, closed the tab, or the app was killed inside that
+      // up-to-2-second window right after a session finished — a moment
+      // people very commonly do exactly that, to go check the dashboard —
+      // the just-earned seconds were never persisted and vanished on
+      // reload. Flushing immediately here (not waiting for the interval)
+      // closes that window down to 0.
+      flushToFirestore();
       // The countdown reached 0 naturally — the scheduled push (if any)
       // is about to fire on its own from the server side; nothing to
       // cancel here. If it was somehow already delivered early or lost,
@@ -281,6 +455,7 @@ export function useCountdownTimer(uid) {
       remaining: remainingRef.current,
       bankedToday: bankedTodayRef.current,
       endAt: endAtRef.current,
+      sessionId: sessionIdRef.current,
     });
   };
 
@@ -325,6 +500,7 @@ export function useCountdownTimer(uid) {
       remaining: remainingRef.current,
       bankedToday: bankedTodayRef.current,
       endAt: endAtRef.current,
+      sessionId: sessionIdRef.current,
     });
   };
 
@@ -338,7 +514,11 @@ export function useCountdownTimer(uid) {
     endAtRef.current = null; // only settable while paused, so there's no running end target to update
     setRemaining(clamped);
     setFinished(false);
-    persistState(uid, { dayKey, running: false, durationSeconds: clamped, remaining: clamped, bankedToday: bankedTodayRef.current, endAt: null });
+    // A new duration means whatever session existed before (if any) is
+    // done being configured — clear sessionId so the NEXT start() mints a
+    // fresh one rather than reusing an old, possibly-already-credited id.
+    sessionIdRef.current = null;
+    persistState(uid, { dayKey, running: false, durationSeconds: clamped, remaining: clamped, bankedToday: bankedTodayRef.current, endAt: null, sessionId: null });
   };
 
   const start = () => {
@@ -346,6 +526,11 @@ export function useCountdownTimer(uid) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Mint a fresh session id only when starting a NEW run (no session id
+    // carried over) — resuming after a pause (sessionIdRef already set)
+    // keeps the same id, since it's still the same logical study session
+    // continuing, not a new one.
+    if (!sessionIdRef.current) sessionIdRef.current = makeSessionId();
     // Anchor the countdown to an absolute end timestamp based on however
     // much time is left right now — this is what makes the countdown
     // immune to throttled/late ticks while backgrounded.
@@ -394,6 +579,10 @@ export function useCountdownTimer(uid) {
     remainingRef.current = durationSeconds;
     setRemaining(durationSeconds);
     setFinished(false);
+    // Whatever session was running/just finished is done — clear its id so
+    // pressing Start again begins a genuinely new session with a fresh id,
+    // not a resumed/duplicate-credited one.
+    sessionIdRef.current = null;
     cancelTimerNotification();
     flushToFirestore();
     persistNow();
@@ -412,8 +601,22 @@ export function useCountdownTimer(uid) {
       durationSeconds,
       remaining: remainingRef.current,
       bankedToday: bankedTodayRef.current,
+      endAt: endAtRef.current,
+      sessionId: sessionIdRef.current,
     });
   };
+
+  // Idempotent completion-credit helpers for the caller (App.jsx). See the
+  // "Idempotent session completion tracking" comment near the top of this
+  // file for the full reasoning — in short: `finished` alone isn't safe to
+  // key a one-time XP/coins award off of, because it can still read `true`
+  // across repeated reloads of the same completed-but-not-yet-reset
+  // session. sessionId identifies WHICH session is finished; these two
+  // functions let the caller ask "have I already paid out for this one?"
+  // and record "I just did", both backed by localStorage so the check
+  // survives a refresh even though React state (a ref in App.jsx) doesn't.
+  const isCurrentSessionCredited = () => hasSessionBeenCredited(SESSION_KIND, uid, sessionIdRef.current);
+  const markCurrentSessionCredited = () => markSessionCredited(SESSION_KIND, uid, sessionIdRef.current);
 
   return {
     remaining,          // seconds left on the countdown
@@ -421,6 +624,9 @@ export function useCountdownTimer(uid) {
     running,
     finished,            // true right after the countdown hits 0, until reset/new duration
     todaySeconds,        // "Time today" total (seconds), same meaning as the old stopwatch's todaySeconds
+    sessionId: sessionIdRef.current, // stable id for the current/just-finished run — see idempotent credit helpers below
+    isCurrentSessionCredited,
+    markCurrentSessionCredited,
     setDuration,
     start,
     pause,

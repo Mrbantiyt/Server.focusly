@@ -4,6 +4,7 @@ import { dayKeyFor } from "../lib/time";
 import { playTimerCompleteChime } from "../lib/sound";
 import { addSubjectSeconds, addSubjectSecondsForDay } from "../lib/firestore";
 import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timerNotifications";
+import { makeSessionId, hasSessionBeenCredited, markSessionCredited } from "./timerSessionCredit";
 
 // ---------------------------------------------------------------------------
 // CUSTOM (MULTI-SUBJECT) TIMER
@@ -39,6 +40,7 @@ import { scheduleTimerNotification, cancelTimerNotification } from "../lib/timer
 // explanation in useCountdownTimer.js.
 const STORAGE_KEY_PREFIX = "focusly:subjectTimerState:";
 const COMPLETE_CHIME_MS = 5000; // "5 sec sound" between-subject / final chime
+const SESSION_KIND = "subjectTimer";
 
 function loadPersistedState(uid) {
   if (!uid) return null;
@@ -80,6 +82,10 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
   const runningRef = useRef(persisted?.running || false);
   const chimeTimeoutRef = useRef(null);
   const chimeIntervalRef = useRef(null);
+  // Unique id for the whole CURRENT plan run — mirrors useCountdownTimer's
+  // sessionIdRef, same idempotent-completion-credit purpose. See
+  // hooks/timerSessionCredit.js.
+  const sessionIdRef = useRef(persisted?.sessionId || null);
 
   // Absolute wall-clock timestamp (ms) the ACTIVE subject's countdown is
   // aiming at — Date.now() + remaining*1000. null when paused. remainingRef
@@ -134,6 +140,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       remaining: remainingRef.current,
       running: runningRef.current,
       endAt: endAtRef.current,
+      sessionId: sessionIdRef.current,
     });
   };
 
@@ -190,6 +197,10 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     setFinished(false);
     runningRef.current = true;
     setRunning(true);
+    // Mint a fresh session id only when starting a NEW plan run — resuming
+    // after a pause (sessionIdRef already set) keeps the same id, since
+    // it's still the same logical session continuing.
+    if (!sessionIdRef.current) sessionIdRef.current = makeSessionId();
     // Anchor to an absolute end timestamp for the active subject — makes
     // the countdown immune to throttled/late ticks while backgrounded.
     endAtRef.current = Date.now() + remainingRef.current * 1000;
@@ -243,6 +254,10 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     remainingRef.current = firstRemaining;
     setRemaining(firstRemaining);
     setFinished(false);
+    // Whatever run was in progress/just finished is done — clear its id so
+    // the next start() mints a fresh one instead of reusing an
+    // already-credited id.
+    sessionIdRef.current = null;
     stopChime();
     cancelTimerNotification();
     persistNow();
@@ -261,9 +276,10 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     remainingRef.current = 0;
     setRemaining(0);
     setFinished(false);
+    sessionIdRef.current = null;
     stopChime();
     cancelTimerNotification();
-    persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false, endAt: null });
+    persistState(uid, { dayKey, plan: [], activeIndex: 0, remaining: 0, running: false, endAt: null, sessionId: null });
     flushPendingSubjectSeconds();
   };
 
@@ -352,6 +368,7 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
       remaining: remainingRef.current,
       running: runningRef.current,
       endAt: endAtRef.current,
+      sessionId: sessionIdRef.current,
     });
   };
 
@@ -385,6 +402,12 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     plan.slice(0, activeIndex).reduce((sum, s) => sum + s.totalSeconds, 0) +
     ((activeSubject?.totalSeconds ?? 0) - remaining);
 
+  // Idempotent completion-credit helpers for the caller (App.jsx) — same
+  // purpose and reasoning as useCountdownTimer's pair. See
+  // hooks/timerSessionCredit.js.
+  const isCurrentSessionCredited = () => hasSessionBeenCredited(SESSION_KIND, uid, sessionIdRef.current);
+  const markCurrentSessionCredited = () => markSessionCredited(SESSION_KIND, uid, sessionIdRef.current);
+
   return {
     plan,
     activeIndex,
@@ -395,6 +418,9 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     chiming,              // true for ~5s during a transition/completion chime
     totalPlanSeconds,
     elapsedPlanSeconds,
+    sessionId: sessionIdRef.current, // stable id for the current/just-finished plan run
+    isCurrentSessionCredited,
+    markCurrentSessionCredited,
     setSubjectPlan,
     start,
     pause,
@@ -403,5 +429,4 @@ export function useSubjectTimer(uid, { onElapsedSecond } = {}) {
     clearPlan,
     dayKey,
   };
-      }
-                       
+}
