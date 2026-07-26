@@ -66,7 +66,7 @@ export default function App() {
   const {
     remaining: timerRemaining, durationSeconds: timerDuration, running, finished: timerFinished,
     todaySeconds, setDuration: setTimerDuration, start: startTimer, pause: pauseTimer, reset: resetTimer, dayKey,
-    creditExternalSeconds,
+    creditExternalSeconds, isCurrentSessionCredited: isTimerSessionCredited, markCurrentSessionCredited: markTimerSessionCredited,
   } = useCountdownTimer(user?.uid);
   // Custom (multi-subject) Timer — each elapsed second is credited to the
   // Study Timer's overall "Time today" bank (via creditExternalSeconds
@@ -188,11 +188,25 @@ export default function App() {
   // sessionCreditedRef, so it fires exactly once per completion — not on
   // every render while `finished` stays true, and not again if the user
   // just leaves the finished screen up without resetting).
+  //
+  // sessionCreditedRef alone is NOT enough to prevent a duplicate award: if
+  // the countdown finishes while the app is closed, then the user refreshes
+  // the page WHILE the "session complete" screen is still showing (finished
+  // still true, Reset not yet pressed), the fresh page load's
+  // sessionCreditedRef starts back at `false` — an in-memory ref can't
+  // survive a reload. Without a persisted check, that reload would credit
+  // the exact same completed session a second time. isTimerSessionCredited
+  // checks a localStorage record keyed by the session's stable id (see
+  // useCountdownTimer's "Idempotent session completion tracking"), which
+  // DOES survive the reload, so the duplicate is caught even on the very
+  // first render of the new page load — before sessionCreditedRef could
+  // have prevented it.
   const sessionCreditedRef = useRef(false);
   useEffect(() => {
     if (!user?.uid) return;
-    if (timerFinished && !sessionCreditedRef.current) {
+    if (timerFinished && !sessionCreditedRef.current && !isTimerSessionCredited()) {
       sessionCreditedRef.current = true;
+      markTimerSessionCredited();
       incrementSessionsCompleted(user.uid).catch((err) => {
         console.warn("[achievements] Failed to credit session:", err);
       });
@@ -204,12 +218,18 @@ export default function App() {
 
   // Same one-time credit, but for the Custom (multi-subject) Timer
   // finishing its whole plan — a completed subject-timer run counts as a
-  // completed session too, same as the Study Timer.
+  // completed session too, same as the Study Timer. Same persisted-check
+  // reasoning as the Study Timer's effect above: subjectSessionCreditedRef
+  // alone can't survive a reload, so isTimerSessionCredited (localStorage-
+  // backed, keyed by the plan run's own sessionId) is what actually
+  // prevents a duplicate award if the user refreshes while the "plan
+  // complete" screen is still showing.
   const subjectSessionCreditedRef = useRef(false);
   useEffect(() => {
     if (!user?.uid) return;
-    if (subjectTimer.finished && !subjectSessionCreditedRef.current) {
+    if (subjectTimer.finished && !subjectSessionCreditedRef.current && !subjectTimer.isCurrentSessionCredited()) {
       subjectSessionCreditedRef.current = true;
+      subjectTimer.markCurrentSessionCredited();
       incrementSessionsCompleted(user.uid).catch((err) => {
         console.warn("[achievements] Failed to credit subject-timer session:", err);
       });
