@@ -21,7 +21,7 @@ export async function getStudyDay(uid, dayKey) {
 }
 
 // Day docs store an ABSOLUTE seconds value for that day (not incremental —
-// see useStopwatch.js), so we can't just `increment()` the lifetime total
+// see useCountdownTimer.js), so we can't just `increment()` the lifetime total
 // on every flush; that would double-count every flush after the first for
 // the same day. Instead this reads the day doc's previous value inside a
 // transaction and folds only the DELTA into users/{uid}.totalStudySeconds,
@@ -795,29 +795,16 @@ export function watchUserProfile(uid, cb) {
   return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
 }
 
-// Live-watches the single config/appUpdate doc that drives the "app update
-// available" banner at the top of the app. Written only by the admin panel
-// (Admin SDK, bypasses firestore.rules) — this is a read-only listener, so
-// toggling it on/off in the admin panel shows/hides the banner for every
-// signed-in user within a second or two, no app redeploy needed.
-export function watchAppUpdateConfig(cb) {
-  const ref = doc(db, "config", "appUpdate");
-  return onSnapshot(ref, (snap) => cb(snap.exists() ? snap.data() : null));
-}
-
-// Same pattern as watchAppUpdateConfig above, for the admin-controlled
-// maintenance-mode screen (config/maintenance) — see App.jsx for how this
-// is combined with the signed-in user's admin claim to decide whether the
-// blocking maintenance screen actually shows.
-//
-// Supports an OPTIONAL schedule window (scheduledStart / scheduledEnd, ISO
-// datetimes) on top of the manual `enabled` toggle set by the admin panel.
-// When both are present, `effectiveEnabled` is computed HERE, client-side,
-// by comparing the current time against the window — this is what makes
-// the maintenance screen turn on/off exactly on schedule with no cron or
-// polling involved: every signed-in client is already listening in
-// realtime, so this just re-evaluates on every snapshot plus a 30s ticker
-// (below) to also catch the boundary while no write is happening.
+// Shared helper behind watchAppUpdateConfig and watchMaintenanceConfig
+// below. Both configs support an OPTIONAL schedule window (scheduledStart /
+// scheduledEnd, ISO datetimes) on top of the manual `enabled` toggle set by
+// the admin panel. When both are present, `effectiveEnabled` is computed
+// HERE, client-side, by comparing the current time against the window —
+// this is what makes the app-update banner / maintenance screen turn
+// on/off exactly on schedule with no cron or polling involved: every
+// signed-in client is already listening in realtime, so this just
+// re-evaluates on every snapshot plus a 30s ticker (below) to also catch
+// the boundary while no write is happening.
 function computeEffectiveEnabled(data) {
   if (!data) return false;
   const { enabled, scheduledStart, scheduledEnd } = data;
@@ -832,8 +819,8 @@ function computeEffectiveEnabled(data) {
   return !!enabled;
 }
 
-export function watchMaintenanceConfig(cb) {
-  const ref = doc(db, "config", "maintenance");
+function watchScheduledConfig(docId, cb) {
+  const ref = doc(db, "config", docId);
   let latest = null;
   let timer = null;
 
@@ -842,8 +829,8 @@ export function watchMaintenanceConfig(cb) {
   const unsubscribe = onSnapshot(ref, (snap) => {
     latest = snap.exists() ? snap.data() : null;
     emit();
-    // Re-check every 30s so the screen still flips on/off right at the
-    // scheduled boundary even if nothing else triggers a new snapshot.
+    // Re-check every 30s so the screen/banner still flips on/off right at
+    // the scheduled boundary even if nothing else triggers a new snapshot.
     if (timer) clearInterval(timer);
     if (latest?.scheduledStart && latest?.scheduledEnd) {
       timer = setInterval(emit, 30000);
@@ -854,6 +841,25 @@ export function watchMaintenanceConfig(cb) {
     if (timer) clearInterval(timer);
     unsubscribe();
   };
+}
+
+// Live-watches the single config/appUpdate doc that drives the "app update
+// available" banner at the top of the app. Written only by the admin panel
+// (Admin SDK, bypasses firestore.rules) — this is a read-only listener, so
+// toggling it on/off in the admin panel shows/hides the banner for every
+// signed-in user within a second or two, no app redeploy needed. Also
+// supports the optional schedule window described above (see
+// watchScheduledConfig) — UpdateBanner reads `effectiveEnabled`.
+export function watchAppUpdateConfig(cb) {
+  return watchScheduledConfig("appUpdate", cb);
+}
+
+// Same pattern as watchAppUpdateConfig above, for the admin-controlled
+// maintenance-mode screen (config/maintenance) — see App.jsx for how this
+// is combined with the signed-in user's admin claim to decide whether the
+// blocking maintenance screen actually shows.
+export function watchMaintenanceConfig(cb) {
+  return watchScheduledConfig("maintenance", cb);
 }
 
 /* --------------------------------- usernames ------------------------------------ */
