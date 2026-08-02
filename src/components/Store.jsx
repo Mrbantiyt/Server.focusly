@@ -191,7 +191,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
                   const isBusy = busyId === item.id;
                   return (
                     <div key={item.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
-                      <img src={item.img} alt={item.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
+                      <img loading="lazy" src={item.img} alt={item.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
                       <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{item.name}</div>
                       {isOwned ? (
                         <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
@@ -223,7 +223,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
                   const isBusy = busyId === item.id;
                   return (
                     <div key={item.id} style={neu(false, 22)} className="flex items-center gap-3 p-3">
-                      <img src={item.img} alt={item.name} className="w-14 h-14 rounded-2xl object-cover flex-shrink-0" />
+                      <img loading="lazy" src={item.img} alt={item.name} className="w-14 h-14 rounded-2xl object-cover flex-shrink-0" />
                       <div className="flex-1 font-display font-semibold text-sm" style={{ color: COL.ink }}>
                         {item.name}
                       </div>
@@ -269,7 +269,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
               const isBusy = busyThemeId === theme.id;
               return (
                 <div key={theme.id} style={neu(false, 20)} className="p-3 flex flex-col items-center text-center">
-                  <img src={theme.img} alt={theme.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
+                  <img loading="lazy" src={theme.img} alt={theme.name} className="w-20 h-20 rounded-2xl object-cover mb-2" />
                   <div className="font-display font-semibold text-xs mb-2" style={{ color: COL.ink }}>{theme.name}</div>
                   {isOwned ? (
                     <div className="w-full flex items-center justify-center gap-1 px-3 py-1.5 rounded-full font-display font-bold text-xs"
@@ -310,7 +310,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
                         style={neu(false, 18)}
                         className="flex items-center gap-3 p-2.5 active:scale-95 transition"
                       >
-                        <img src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+                        <img loading="lazy" src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
                         <span className="flex-1 text-left font-display font-semibold text-xs" style={{ color: COL.ink }}>
                           {theme.name}
                         </span>
@@ -366,7 +366,7 @@ export default function Store({ uid, coins, ownedItems, activeMascot, ownedTheme
                         : "4px 4px 10px rgba(163,170,199,0.4), -4px -4px 10px rgba(255,255,255,0.85)",
                     }}
                   >
-                    <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
+                    <img loading="lazy" src={item.img} alt={item.name} className="w-full h-full object-cover" />
                   </div>
                   <span className="font-body text-[10px]" style={{ color: active ? COL.violet : COL.sub }}>
                     {active ? "In use" : "Use"}

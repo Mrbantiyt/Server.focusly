@@ -246,7 +246,7 @@ function AccountSettingsPanel({ user, ownedItems, onBack }) {
                         ? `0 0 0 2px ${COL.violet}`
                         : "none",
                     }}>
-                    <img src={item.img} alt={item.name} className="w-full aspect-square object-cover" />
+                    <img loading="lazy" src={item.img} alt={item.name} className="w-full aspect-square object-cover" />
                   </button>
                 ))}
               </div>
@@ -370,7 +370,7 @@ function CustomizePanel({ uid, ownedItems, activeMascot, ownedThemes, activeThem
                       : "4px 4px 10px rgba(163,170,199,0.4), -4px -4px 10px rgba(255,255,255,0.85)",
                   }}
                 >
-                  <img src={item.img} alt={item.name} className="w-full h-full object-cover" />
+                  <img loading="lazy" src={item.img} alt={item.name} className="w-full h-full object-cover" />
                 </div>
                 <span className="font-body text-[10px]" style={{ color: active ? COL.violet : COL.sub }}>
                   {active ? "In use" : "Use"}
@@ -397,7 +397,7 @@ function CustomizePanel({ uid, ownedItems, activeMascot, ownedThemes, activeThem
                 className="flex items-center gap-3 p-2.5 active:scale-95 transition"
               >
                 {theme.img ? (
-                  <img src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
+                  <img loading="lazy" src={theme.img} alt={theme.name} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" />
                 ) : (
                   <div
                     className="w-10 h-10 rounded-xl flex-shrink-0"

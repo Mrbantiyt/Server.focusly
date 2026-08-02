@@ -9,7 +9,7 @@ export function StopwatchCard({ seconds, running, onToggle, onReset }) {
   const R = 74, C = 2 * Math.PI * R;
   const gradId = "swGrad";
 
-  // Reset only zeroes the face (see useStopwatch.reset) — "Time today"
+  // Reset only zeroes the face (see useCountdownTimer's reset) — "Time today"
   // keeps counting in the background either way.
   const handleReset = () => {
     if (seconds > 0 && !window.confirm("Reset the stopwatch face to 0:00:00? (Time today is unaffected.)")) return;

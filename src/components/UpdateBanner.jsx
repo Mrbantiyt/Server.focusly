@@ -1,9 +1,11 @@
 // src/components/UpdateBanner.jsx
 //
 // Shown at the very top of the app, above StatusBar, whenever an admin has
-// switched the banner ON from the admin panel (config/appUpdate.enabled).
-// Purely presentational — App.jsx owns the live Firestore listener
-// (watchAppUpdateConfig) and just passes the doc down as `config`.
+// switched the banner ON from the admin panel (config/appUpdate.enabled),
+// OR whenever the current time falls inside an admin-set schedule window
+// (config/appUpdate.scheduledStart/scheduledEnd) — App.jsx owns the live
+// Firestore listener (watchAppUpdateConfig) which computes this combined
+// "effectiveEnabled" and just passes the doc down as `config`.
 //
 // DISMISSAL: once someone taps "Update", we don't want to keep nagging them
 // about the *same* update every time they open the app. There's no
@@ -26,7 +28,7 @@ function fingerprintFor(config) {
 }
 
 export default function UpdateBanner({ config }) {
-  if (!config?.enabled) return null;
+  if (!config?.effectiveEnabled) return null;
 
   const fingerprint = fingerprintFor(config);
   let dismissedFingerprint = null;
