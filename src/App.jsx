@@ -1,5 +1,5 @@
 // src/App.jsx
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, lazy, Suspense } from "react";
 import { Home, MessageSquare, StickyNote, CalendarDays, Settings as SettingsIcon } from "lucide-react";
 import { COL, neu, LIQUID_BG_STYLE, cacheActiveTheme, getActiveTheme, THEMES } from "./theme";
 import { useAuth } from "./hooks/useAuth";
@@ -17,26 +17,36 @@ import { getWeekStartKey } from "./lib/time";
 import { markAllRead } from "./lib/notifications";
 import { syncPushSubscription, isMedianApp } from "./lib/median";
 
+// Eager: needed for the very first paint (auth gate / home tab), so lazy
+// loading them would only add a waterfall, not save anything.
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import AskAiExternal from "./components/AskAiExternal";
-import Notes from "./components/Notes";
-import CalendarView from "./components/CalendarView";
-import GraphView from "./components/GraphView";
-import SubjectStatsView from "./components/SubjectStatsView";
-import Settings from "./components/Settings";
 import StatusBar from "./components/StatusBar";
 import UpdateBanner from "./components/UpdateBanner";
 import MaintenanceScreen from "./components/MaintenanceScreen";
 import VerifyEmailGate from "./components/VerifyEmailGate";
-import LevelModal from "./components/LevelModal";
-import StreakModal from "./components/StreakModal";
-import AchievementUnlockPopup from "./components/AchievementUnlockPopup";
-import NotificationsPanel from "./components/NotificationsPanel";
-import Store, { STORE_ITEMS } from "./components/Store";
-import Leaderboard from "./components/Leaderboard";
-import { useAllStoreItems } from "./lib/storeOverrides";
 import { AppLoadingSkeleton } from "./components/Skeleton";
+
+// Lazy: only needed once the user actually opens that tab/modal. Splits
+// each into its own chunk so the initial bundle (and therefore first
+// load / first paint) doesn't pay for code the user may never visit in a
+// given session — biggest wins here are AskAiExternal (external chat
+// embed + its own deps) and GraphView/SubjectStatsView (pull in recharts,
+// a genuinely large charting library that only the Stats tab needs).
+const AskAiExternal = lazy(() => import("./components/AskAiExternal"));
+const Notes = lazy(() => import("./components/Notes"));
+const CalendarView = lazy(() => import("./components/CalendarView"));
+const GraphView = lazy(() => import("./components/GraphView"));
+const SubjectStatsView = lazy(() => import("./components/SubjectStatsView"));
+const Settings = lazy(() => import("./components/Settings"));
+const LevelModal = lazy(() => import("./components/LevelModal"));
+const StreakModal = lazy(() => import("./components/StreakModal"));
+const AchievementUnlockPopup = lazy(() => import("./components/AchievementUnlockPopup"));
+const NotificationsPanel = lazy(() => import("./components/NotificationsPanel"));
+const Store = lazy(() => import("./components/Store"));
+const Leaderboard = lazy(() => import("./components/Leaderboard"));
+import { STORE_ITEMS } from "./components/Store"; // small pure-data export, kept eager since Dashboard/Settings reference it outside the lazy Store component itself
+import { useAllStoreItems } from "./lib/storeOverrides";
 
 const FONT = (
   <style>{`
@@ -433,69 +443,82 @@ export default function App() {
                 />
               )}
               {/*
-                NoteGPT is embedded here instead of our own AI chat. It's
-                kept mounted at all times (hidden via CSS when another tab
-                is active) just like Chat was, so switching tabs doesn't
-                reload the iframe every time.
-              */}
-              <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
-                <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} onUpgradePlan={goToBilling} />
-              </div>
+                Everything below is lazy-loaded (see the imports at the top
+                of this file) — each tab's code, and heavy deps it pulls in
+                like recharts for the Stats tab, only download once the
+                user actually visits that tab, instead of all being in the
+                initial bundle every user pays for on first load. A single
+                Suspense boundary covers all of them; the fallback only
+                flashes briefly the very first time a given tab is opened
+                in a session (the chunk is cached after that).
 
-              {tab === "notes" && (
-                <Notes
-                  uid={user.uid}
-                  notes={notes}
-                  pendingOpenId={pendingNoteId}
-                  onConsumePendingOpenId={() => setPendingNoteId(null)}
-                />
-              )}
-              {tab === "cal" && (
-                <div className="flex flex-col gap-6">
-                  <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
-                  <GraphView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
-                  <SubjectStatsView
-                    history={history}
-                    todayKey={dayKey}
-                    todaySeconds={todaySeconds}
-                    subjectHistory={subjectHistory}
-                  />
+                NoteGPT (AskAiExternal) is embedded here instead of our own
+                AI chat. It's kept mounted at all times once loaded (hidden
+                via CSS when another tab is active) just like before, so
+                switching tabs doesn't reload the iframe every time —
+                Suspense only affects the FIRST time its chunk loads, not
+                subsequent tab switches.
+              */}
+              <Suspense fallback={<div className="pt-16 flex justify-center opacity-40"><div className="w-6 h-6 rounded-full border-2 border-current border-t-transparent animate-spin" /></div>}>
+                <div style={{ display: tab === "chat" ? "block" : "none", height: "100%" }}>
+                  <AskAiExternal user={user} billing={profileDoc?.billing} aiUsage={profileDoc?.aiUsage} dayKey={dayKey} onUpgradePlan={goToBilling} />
                 </div>
-              )}
-              {tab === "settings" && (
-                <Settings
-                  user={profile}
-                  pushStatus={pushStatus}
-                  oneSignalUserId={profileDoc?.oneSignalUserId || null}
-                  onRefreshPushStatus={refreshPushStatus}
-                  tasks={tasks}
-                  taskStats={gameStats.taskStats}
-                  coins={gameStats.coins}
-                  streak={gameStats.streak}
-                  level={gameStats.level}
-                  todaySeconds={todaySeconds}
-                  history={history}
-                  dayKey={dayKey}
-                  ownedItems={gameStats.ownedItems}
-                  activeMascot={gameStats.activeMascot}
-                  ownedThemes={gameStats.ownedThemes}
-                  activeTheme={gameStats.activeTheme}
-                  billing={profileDoc?.billing}
-                  lastStreakDay={gameStats.lastStreakDay}
-                  onOpenStreak={() => setShowStreak(true)}
-                  achievements={achievements}
-                  studyReminder={profileDoc?.studyReminder}
-                  isMedianApp={isMedianApp()}
-                  initialSection={settingsInitialSection}
-                  totalStudySeconds={totalStudySeconds}
-                  onLogout={logout}
-                  myLeaderboardRank={myLeaderboardRank}
-                  leaderboardRows={leaderboardRows}
-                  leaderboardLoading={leaderboardLoading}
-                  requestEmailChange={requestEmailChange}
-                  confirmEmailChange={confirmEmailChange}
-                />
-              )}
+
+                {tab === "notes" && (
+                  <Notes
+                    uid={user.uid}
+                    notes={notes}
+                    pendingOpenId={pendingNoteId}
+                    onConsumePendingOpenId={() => setPendingNoteId(null)}
+                  />
+                )}
+                {tab === "cal" && (
+                  <div className="flex flex-col gap-6">
+                    <CalendarView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
+                    <GraphView history={history} todayKey={dayKey} todaySeconds={todaySeconds} />
+                    <SubjectStatsView
+                      history={history}
+                      todayKey={dayKey}
+                      todaySeconds={todaySeconds}
+                      subjectHistory={subjectHistory}
+                    />
+                  </div>
+                )}
+                {tab === "settings" && (
+                  <Settings
+                    user={profile}
+                    pushStatus={pushStatus}
+                    oneSignalUserId={profileDoc?.oneSignalUserId || null}
+                    onRefreshPushStatus={refreshPushStatus}
+                    tasks={tasks}
+                    taskStats={gameStats.taskStats}
+                    coins={gameStats.coins}
+                    streak={gameStats.streak}
+                    level={gameStats.level}
+                    todaySeconds={todaySeconds}
+                    history={history}
+                    dayKey={dayKey}
+                    ownedItems={gameStats.ownedItems}
+                    activeMascot={gameStats.activeMascot}
+                    ownedThemes={gameStats.ownedThemes}
+                    activeTheme={gameStats.activeTheme}
+                    billing={profileDoc?.billing}
+                    lastStreakDay={gameStats.lastStreakDay}
+                    onOpenStreak={() => setShowStreak(true)}
+                    achievements={achievements}
+                    studyReminder={profileDoc?.studyReminder}
+                    isMedianApp={isMedianApp()}
+                    initialSection={settingsInitialSection}
+                    totalStudySeconds={totalStudySeconds}
+                    onLogout={logout}
+                    myLeaderboardRank={myLeaderboardRank}
+                    leaderboardRows={leaderboardRows}
+                    leaderboardLoading={leaderboardLoading}
+                    requestEmailChange={requestEmailChange}
+                    confirmEmailChange={confirmEmailChange}
+                  />
+                )}
+              </Suspense>
             </div>
 
             <div className="px-5 pb-5 pt-2">
@@ -543,60 +566,62 @@ export default function App() {
         )}
       </div>
 
-      {showLevel && (
-        <LevelModal
-          level={gameStats.level}
-          xpIntoLevel={gameStats.xpIntoLevel}
-          xpForNextLevel={gameStats.xpForNextLevel}
-          totalXp={gameStats.totalXp}
-          totalXpForNextLevel={gameStats.totalXpForNextLevel}
-          xpPerTick={gameStats.xpPerTick}
-          justLeveledUp={justLeveledUp}
-          onClose={() => { setShowLevel(false); setJustLeveledUp(false); }}
-        />
-      )}
-      {currentCelebration && (
-        <AchievementUnlockPopup
-          achievement={currentCelebration}
-          onDone={dismissNextCelebration}
-        />
-      )}
-      {showStreak && (
-        <StreakModal
-          streak={gameStats.streak}
-          streakDays={gameStats.streakDays}
-          lastStreakDay={gameStats.lastStreakDay}
-          uid={user.uid}
-          coins={gameStats.coins}
-          onClose={() => setShowStreak(false)}
-        />
-      )}
-      {showStore && (
-        <Store
-          uid={user.uid}
-          coins={gameStats.coins}
-          ownedItems={gameStats.ownedItems}
-          activeMascot={gameStats.activeMascot}
-          ownedThemes={gameStats.ownedThemes}
-          activeTheme={gameStats.activeTheme}
-          onClose={() => setShowStore(false)}
-        />
-      )}
-      {showNotifications && (
-        <NotificationsPanel
-          uid={user.uid}
-          notifications={notifications}
-          onClose={() => setShowNotifications(false)}
-        />
-      )}
-      {showLeaderboard && (
-        <Leaderboard
-          rows={leaderboardRows}
-          loading={leaderboardLoading}
-          myUid={user.uid}
-          onClose={() => setShowLeaderboard(false)}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showLevel && (
+          <LevelModal
+            level={gameStats.level}
+            xpIntoLevel={gameStats.xpIntoLevel}
+            xpForNextLevel={gameStats.xpForNextLevel}
+            totalXp={gameStats.totalXp}
+            totalXpForNextLevel={gameStats.totalXpForNextLevel}
+            xpPerTick={gameStats.xpPerTick}
+            justLeveledUp={justLeveledUp}
+            onClose={() => { setShowLevel(false); setJustLeveledUp(false); }}
+          />
+        )}
+        {currentCelebration && (
+          <AchievementUnlockPopup
+            achievement={currentCelebration}
+            onDone={dismissNextCelebration}
+          />
+        )}
+        {showStreak && (
+          <StreakModal
+            streak={gameStats.streak}
+            streakDays={gameStats.streakDays}
+            lastStreakDay={gameStats.lastStreakDay}
+            uid={user.uid}
+            coins={gameStats.coins}
+            onClose={() => setShowStreak(false)}
+          />
+        )}
+        {showStore && (
+          <Store
+            uid={user.uid}
+            coins={gameStats.coins}
+            ownedItems={gameStats.ownedItems}
+            activeMascot={gameStats.activeMascot}
+            ownedThemes={gameStats.ownedThemes}
+            activeTheme={gameStats.activeTheme}
+            onClose={() => setShowStore(false)}
+          />
+        )}
+        {showNotifications && (
+          <NotificationsPanel
+            uid={user.uid}
+            notifications={notifications}
+            onClose={() => setShowNotifications(false)}
+          />
+        )}
+        {showLeaderboard && (
+          <Leaderboard
+            rows={leaderboardRows}
+            loading={leaderboardLoading}
+            myUid={user.uid}
+            onClose={() => setShowLeaderboard(false)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
