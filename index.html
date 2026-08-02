@@ -7,6 +7,17 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" type="image/png" href="/logo.png" />
+    <!--
+      Warms up the connection to Google Fonts (DNS + TLS handshake) before
+      the @import in index.css even asks for the actual font file — that
+      @import still has to wait for index.css to be parsed first, so this
+      shaves the connection-setup time off what would otherwise be a fully
+      serial: parse CSS -> discover font URL -> open connection -> download
+      chain. crossorigin is required on the fonts.gstatic.com hint because
+      font files are fetched with CORS.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <title>Focusly</title>
   </head>
   <body>
