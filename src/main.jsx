@@ -17,20 +17,27 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   });
 }
 
-// -----------------------------------------------------------------------
-// DIAGNOSTIC SAFETY NET
-// -----------------------------------------------------------------------
-// index.css paints #root's background dark (#0E0E16) unconditionally, so
-// if App ever throws before/during its first render — a bad import, a
-// Firebase init error, a failed dynamic import/chunk, anything — the user
-// just sees a solid black screen with zero information, because nothing
-// ever painted over that background. There's also no visible signal if a
-// lazy-loaded chunk (import()) fails to fetch, which happens silently.
-//
-// This catches both cases and renders the actual error message directly
-// on-screen (readable on any phone, no DevTools needed) instead of a
-// mysterious black rectangle. Safe to leave in permanently — it only ever
-// shows if something has already gone wrong.
+// TEMPORARY DEBUG HELPER: shows any uncaught error directly on screen
+// instead of a silent blank page, so a crash can be diagnosed on a phone
+// with no access to devtools/console. Safe to remove once the underlying
+// bug is fixed.
+function showFatalError(err) {
+  const root = document.getElementById("root");
+  if (!root) return;
+  const message = (err && (err.stack || err.message)) || String(err);
+  root.innerHTML =
+    '<div style="background:#1a0000;color:#ffb3b3;font-family:monospace;' +
+    'font-size:13px;white-space:pre-wrap;padding:16px;min-height:100vh;' +
+    'box-sizing:border-box;line-height:1.5;">' +
+    '<div style="color:#ff6666;font-weight:bold;font-size:16px;margin-bottom:12px;">' +
+    'App crashed — error below:</div>' +
+    message.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+    "</div>";
+}
+
+window.addEventListener("error", (e) => showFatalError(e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => showFatalError(e.reason));
+
 class RootErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -40,21 +47,21 @@ class RootErrorBoundary extends React.Component {
     return { error };
   }
   componentDidCatch(error, info) {
-    console.error("Focusly crashed during render:", error, info);
+    console.error("RootErrorBoundary caught:", error, info);
   }
   render() {
     if (this.state.error) {
+      const message = this.state.error.stack || this.state.error.message || String(this.state.error);
       return (
         <div style={{
-          minHeight: "100dvh", width: "100%", boxSizing: "border-box",
-          background: "#0E0E16", color: "#F2F2F7", padding: 20,
-          fontFamily: "monospace", fontSize: 13, lineHeight: 1.5,
-          whiteSpace: "pre-wrap", overflowY: "auto",
+          background: "#1a0000", color: "#ffb3b3", fontFamily: "monospace",
+          fontSize: 13, whiteSpace: "pre-wrap", padding: 16, minHeight: "100vh",
+          boxSizing: "border-box", lineHeight: 1.5,
         }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12, color: "#FF7A85" }}>
-            App failed to load
+          <div style={{ color: "#ff6666", fontWeight: "bold", fontSize: 16, marginBottom: 12 }}>
+            App crashed — error below:
           </div>
-          <div>{String(this.state.error?.stack || this.state.error?.message || this.state.error)}</div>
+          {message}
         </div>
       );
     }
@@ -62,21 +69,14 @@ class RootErrorBoundary extends React.Component {
   }
 }
 
-// Also catches errors that happen OUTSIDE React's render cycle (e.g. a
-// dynamic import() for a lazy-loaded chunk failing to fetch, or an async
-// error thrown from a Promise) — React's error boundary above only catches
-// errors thrown synchronously during render/lifecycle, not these.
-window.addEventListener("error", (e) => {
-  console.error("Uncaught error before/outside React render:", e.error || e.message);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  console.error("Unhandled promise rejection:", e.reason);
-});
-
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <RootErrorBoundary>
-      <App />
-    </RootErrorBoundary>
-  </React.StrictMode>
-);
+try {
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    <React.StrictMode>
+      <RootErrorBoundary>
+        <App />
+      </RootErrorBoundary>
+    </React.StrictMode>
+  );
+} catch (err) {
+  showFatalError(err);
+}
